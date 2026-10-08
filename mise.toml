@@ -1,0 +1,228 @@
+[tools]
+go = "1.27.1"
+
+#####################
+# Development Tasks #
+#####################
+
+[tasks.all]
+description = "Run fixers, tests, and linters"
+run = [{ task = "fixers" }, { task = "tests" }, { task = "linters" }]
+
+[tasks.ci-tests]
+alias = "test"
+description = "Run tests (with the race detector)"
+run = "go test -race -shuffle=on ./..."
+
+[tasks.coverage]
+alias = "cover"
+description = "Run tests and generate coverage report"
+run = "go test -coverprofile=coverage.out -covermode=atomic ./... && go tool cover -func=coverage.out"
+
+[tasks.install-hooks]
+description = "Install Lefthook git hooks"
+run = "go tool lefthook install"
+
+[tasks.refresh-template]
+description = "Refresh from template"
+run = "git tpl update && git tpl merge"
+
+[tasks.pre-commit]
+description = "Format staged files"
+usage = 'arg "[staged_files]" var=#true'
+run = [
+  "go tool gitleaks git --redact --pre-commit --staged",
+  "mise run fixers ${usage_staged_files}",
+]
+
+[tasks.tests]
+alias = "test"
+description = "Run tests (with the race detector)"
+run = "go test -cover ./..."
+
+#############
+# Fix Tasks #
+#############
+
+[tasks.fixers]
+alias = "fix"
+usage = 'arg "[staged_files]" var=#true'
+run = [
+  "mise run fix-go-mod-tidy",
+  "mise run fix-gofumpt ${usage_staged_files}",
+  "mise run fix-goimports ${usage_staged_files}",
+  "mise run fix-go-fix ${usage_staged_files}",
+  "mise run fix-testifylint ${usage_staged_files}",
+]
+
+[tasks.fix-gofumpt]
+description = "Run code formatting tools"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  go tool gofumpt -l -w .
+  exit 0
+fi
+go_files=""
+for f in ${usage_staged_files}; do
+  case "$f" in *.go) go_files="$go_files $f" ;; esac
+done
+[ -z "$go_files" ] && exit 0
+# shellcheck disable=SC2086
+go tool gofumpt -l -w $go_files
+'''
+
+[tasks.fix-goimports]
+description = "Run code formatting tools"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  go tool goimports -l -w -local $(go list -m) .
+  exit 0
+fi
+go_files=""
+for f in ${usage_staged_files}; do
+  case "$f" in *.go) go_files="$go_files $f" ;; esac
+done
+[ -z "$go_files" ] && exit 0
+# shellcheck disable=SC2086
+go tool goimports -l -w -local $(go list -m) $go_files
+'''
+
+[tasks.fix-go-fix]
+description = "Apply go fix"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  go fix ./...
+  exit 0
+fi
+dirs=""
+for f in ${usage_staged_files}; do
+  case "$f" in
+    *.go)
+      d=$(dirname "$f")
+      case "$d" in ./*|/*) ;; *) d="./$d" ;; esac
+      dirs="$dirs $d"
+      ;;
+  esac
+done
+[ -z "$dirs" ] && exit 0
+# shellcheck disable=SC2086
+pkgs=$(printf '%s\n' $dirs | sort -u)
+# shellcheck disable=SC2086
+go fix $pkgs
+'''
+
+[tasks.fix-go-mod-tidy]
+description = "Tidy go.mod and go.sum"
+run = "go mod tidy"
+
+[tasks.fix-testifylint]
+description = "Run testifylint static analysis"
+usage = 'arg "[staged_files]" var=#true'
+run = '''
+#!/usr/bin/env bash
+set -eo pipefail
+if [ -z "${usage_staged_files:-}" ]; then
+  go tool testifylint -fix ./...
+  exit 0
+fi
+dirs=""
+for f in ${usage_staged_files}; do
+  case "$f" in
+    *.go)
+      d=$(dirname "$f")
+      case "$d" in ./*|/*) ;; *) d="./$d" ;; esac
+      dirs="$dirs $d"
+      ;;
+  esac
+done
+[ -z "$dirs" ] && exit 0
+# shellcheck disable=SC2086
+pkgs=$(printf '%s\n' $dirs | sort -u)
+# shellcheck disable=SC2086
+go tool testifylint -fix $pkgs
+'''
+
+##############
+# Lint Tasks #
+##############
+
+[tasks.linters]
+alias = "static-analysis"
+run = [
+  { task = "lint-constable" },
+  { task = "lint-errcheck" },
+  { task = "lint-gitleaks" },
+  { task = "lint-go-check-sumtype" },
+  { task = "lint-go-vet" },
+  { task = "lint-gosec" },
+  { task = "lint-govulncheck" },
+  { task = "lint-nilaway" },
+  { task = "lint-staticcheck" },
+  { task = "lint-testifylint" },
+]
+
+[tasks.lint-constable]
+description = "Checks nonmutating directives"
+run = "go tool constable ./..."
+
+[tasks.lint-errcheck]
+description = "Check for unhandled errors"
+run = "go tool errcheck ./..."
+
+[tasks.lint-gitleaks]
+description = "Scan the Git history for secrets"
+run = "go tool gitleaks dir --verbose --redact ."
+
+[tasks.lint-go-check-sumtype]
+description = "Check sealed sum-type switches for exhaustiveness"
+run = "go tool go-check-sumtype -default-signifies-exhaustive=false -include-shared-interfaces ./..."
+
+[tasks.lint-go-vet]
+description = "Run go vet static analysis"
+run = "go vet ./..."
+
+[tasks.lint-gosec]
+description = "Run gosec static analysis"
+run = "go tool gosec -severity high -quiet ./..."
+
+[tasks.lint-govulncheck]
+description = "Check for vulnerabilities"
+run = "go tool govulncheck ./..."
+
+[tasks.lint-nilaway]
+description = "Run nilaway on github.com/nnutter packages"
+run = "go tool nilaway -include-pkgs $(go list -m) ./..."
+
+[tasks.lint-staticcheck]
+description = "Run staticcheck static analysis"
+run = "go tool staticcheck ./..."
+
+[tasks.lint-testifylint]
+description = "Run testifylint static analysis"
+run = "go tool testifylint ./..."
+
+#####################
+# Agent Hooks       #
+#####################
+
+[tasks.on-start]
+description = "Pi mise-hooks: run fixers, tests, and linters before agent starts"
+run = [{ task = "all" }]
+
+[tasks.on-stop]
+description = "Pi mise-hooks: fix edited files, then test and lint"
+usage = 'arg "[staged_files]" var=#true'
+run = [
+  "mise run fixers ${usage_staged_files}",
+  "mise run tests",
+  "mise run linters",
+]
