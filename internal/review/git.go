@@ -24,6 +24,54 @@ type Stack struct {
 	ChangeID string   `json:"changeId,omitempty"`
 }
 
+func (s Stack) validate() error {
+	if !filepath.IsAbs(s.Repo) {
+		return fmt.Errorf("stack requires an absolute repository path")
+	}
+	if err := validateCommits(s.Commits); err != nil {
+		return err
+	}
+	if !fullSHA.MatchString(s.Base) {
+		return fmt.Errorf("stack requires a full parent SHA")
+	}
+	if s.Tip != s.Commits[len(s.Commits)-1] {
+		return fmt.Errorf("stack tip does not match commits")
+	}
+	expected := s.Commits[0]
+	if len(s.Commits) > 1 {
+		expected += ".." + s.Tip
+	}
+	if s.Key != expected {
+		return fmt.Errorf("stack key does not match commits")
+	}
+	if s.Subject == "" {
+		return fmt.Errorf("stack requires a subject")
+	}
+	if s.ChangeID != "" {
+		if !changeIDPattern.MatchString(s.ChangeID) {
+			return fmt.Errorf("invalid stack Change-Id")
+		}
+	}
+	return nil
+}
+
+func validateCommits(commits []string) error {
+	if len(commits) == 0 {
+		return fmt.Errorf("stack requires commits")
+	}
+	seen := map[string]bool{}
+	for _, sha := range commits {
+		if !fullSHA.MatchString(sha) {
+			return fmt.Errorf("stack requires full commit SHAs")
+		}
+		if seen[sha] {
+			return fmt.Errorf("duplicate stack commit")
+		}
+		seen[sha] = true
+	}
+	return nil
+}
+
 // Snapshot is an immutable view of a feature branch's review range.
 type Snapshot struct {
 	Branch string  `json:"branch"`
