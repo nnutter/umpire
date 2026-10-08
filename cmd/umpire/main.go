@@ -2,11 +2,15 @@
 package main
 
 import (
-	"fmt"
+	"context"
+	"os"
 
 	"github.com/nnutter/umpire"
+	"github.com/nnutter/umpire/internal/cli"
 )
 
 func main() {
-	fmt.Println("umpire " + umpire.Version)
+	if err := cli.Execute(context.Background(), os.Args[1:], ".", os.Stdin, os.Stdout, os.Stderr, umpire.Version); err != nil {
+		os.Exit(1)
+	}
 }
