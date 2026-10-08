@@ -1,0 +1,158 @@
+name: Update Tap
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish to nnutter/homebrew-tap
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-tap
+  cancel-in-progress: false
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FORMULA_NAME: umpire
+      TAP_OWNER: nnutter
+      TAP_REPOSITORY: homebrew-tap
+    steps:
+      - name: Resolve release tag
+        id: release
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          tag="${EVENT_TAG:-$INPUT_TAG}"
+          if [[ -z "$tag" ]]; then
+            echo "A release tag is required." >&2
+            exit 1
+          fi
+          if [[ "$tag" == */* ]]; then
+            echo "The release tag must not contain a slash." >&2
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Generate a token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ env.TAP_OWNER }}
+          repositories: ${{ env.TAP_REPOSITORY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Check out the tap
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.TAP_OWNER }}/${{ env.TAP_REPOSITORY }}
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
+
+      - name: Skip when the formula already uses this tag
+        id: needed
+        env:
+          FORMULA_NAME: ${{ env.FORMULA_NAME }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if grep -Fq "/archive/refs/tags/${TAG}.tar.gz" "Formula/${FORMULA_NAME}.rb" ||
+             grep -Fq "/tarball/${TAG}" "Formula/${FORMULA_NAME}.rb"; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "Formula ${FORMULA_NAME} already uses ${TAG}."
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure git for the app
+        if: steps.needed.outputs.needed == 'true'
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          user_id="$(gh api "/users/${APP_SLUG}[bot]" --jq .id)"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+
+      - name: Create the formula branch
+        if: steps.needed.outputs.needed == 'true'
+        env:
+          BRANCH_NAME: formula-updates/${{ env.FORMULA_NAME }}-${{ steps.release.outputs.tag }}
+        run: git switch --create "$BRANCH_NAME"
+
+      - name: Update the formula
+        if: steps.needed.outputs.needed == 'true'
+        env:
+          FORMULA_NAME: ${{ env.FORMULA_NAME }}
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: bin/update-formula "$FORMULA_NAME" "$TAG"
+
+      - name: Push the formula branch
+        if: steps.needed.outputs.needed == 'true'
+        env:
+          BRANCH_NAME: formula-updates/${{ env.FORMULA_NAME }}-${{ steps.release.outputs.tag }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAP_OWNER: ${{ env.TAP_OWNER }}
+          TAP_REPOSITORY: ${{ env.TAP_REPOSITORY }}
+        run: |
+          git push --force-with-lease \
+            "https://x-access-token:${GH_TOKEN}@github.com/${TAP_OWNER}/${TAP_REPOSITORY}.git" \
+            "HEAD:refs/heads/${BRANCH_NAME}"
+
+      - name: Open a pull request
+        if: steps.needed.outputs.needed == 'true'
+        env:
+          BRANCH_NAME: formula-updates/${{ env.FORMULA_NAME }}-${{ steps.release.outputs.tag }}
+          FORMULA_NAME: ${{ env.FORMULA_NAME }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          TAP_OWNER: ${{ env.TAP_OWNER }}
+          TAP_REPOSITORY: ${{ env.TAP_REPOSITORY }}
+          UPSTREAM_REPOSITORY: ${{ github.repository }}
+        run: |
+          tap="${TAP_OWNER}/${TAP_REPOSITORY}"
+          existing_url="$(
+            gh pr list \
+              --repo "$tap" \
+              --head "$BRANCH_NAME" \
+              --state open \
+              --json url \
+              --jq '.[0].url // empty'
+          )"
+          if [[ -n "$existing_url" ]]; then
+            echo "Pull request already exists: $existing_url"
+            exit 0
+          fi
+
+          gh pr create \
+            --repo "$tap" \
+            --title "Updated ${FORMULA_NAME} to ${TAG}" \
+            --head "$BRANCH_NAME" \
+            --base "$(gh repo view "$tap" --json defaultBranchRef --jq .defaultBranchRef.name)" \
+            --body "Update ${FORMULA_NAME} to ${TAG} from ${UPSTREAM_REPOSITORY}."
+
+      - name: Enable auto-merge
+        if: steps.needed.outputs.needed == 'true'
+        env:
+          BRANCH_NAME: formula-updates/${{ env.FORMULA_NAME }}-${{ steps.release.outputs.tag }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAP_OWNER: ${{ env.TAP_OWNER }}
+          TAP_REPOSITORY: ${{ env.TAP_REPOSITORY }}
+        run: |
+          gh pr merge \
+            --repo "${TAP_OWNER}/${TAP_REPOSITORY}" \
+            --merge \
+            --auto \
+            "$BRANCH_NAME"
