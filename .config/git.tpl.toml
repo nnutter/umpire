@@ -1,0 +1,18 @@
+# git-tpl — https://noirbizarre.github.io/git-tpl/configuration/
+#
+# This file is versioned with the project. Edit an answer and run
+# `git tpl update` to re-render the template with it.
+
+[template]
+source = "git@github.com:nnutter/go-template.git"
+
+[answers]
+copyright_holder = "Nathan Nutter"
+copyright_year = "2026"
+formula_name = "umpire"
+go_version = "1.27.1"
+module_path = "github.com/nnutter/umpire"
+project_name = "umpire"
+tap_owner = "nnutter"
+tap_repository = "homebrew-tap"
+with_homebrew = true
