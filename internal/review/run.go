@@ -43,7 +43,9 @@ func (r Reviewer) Review(ctx context.Context, options ReviewOptions) (Result, er
 	}
 	result := makeResult("review", plan.view, plan.state)
 	if plan.stack == nil {
-		result.Status = "idle"
+		if result.Status != "idle" {
+			result.Status = "no_waiting"
+		}
 		return result, nil
 	}
 	if plan.prior != nil {

@@ -110,6 +110,21 @@ func TestReviewDoesNotApproveEmptyExitOrDestroyWorktreeChanges(t *testing.T) {
 	require.Equal(t, "preserve this", string(content))
 }
 
+func TestDeferredReviewsRemainPending(t *testing.T) {
+	reviewer, view, _ := testReviewer(t)
+	require.NoError(t, (Store{Path: view.Path}).Update(func(state *State) error {
+		attempt := newAttempt(view.Stacks[0], "incomplete")
+		attempt.Deferred = true
+		state.Attempts = append(state.Attempts, attempt)
+		return nil
+	}))
+	result, err := reviewer.Review(t.Context(), ReviewOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "no_waiting", result.Status)
+	require.Len(t, result.Entries, 1)
+	require.Equal(t, "incomplete", result.Entries[0].Status)
+}
+
 func TestReviewRefusesConcurrentWorktreeUse(t *testing.T) {
 	reviewer, view, _ := testReviewer(t)
 	path, err := WorktreePath(view.Stacks[0].Repo)
