@@ -2,6 +2,7 @@ package review
 
 import (
 	"context"
+	"encoding/json/v2"
 	"fmt"
 )
 
@@ -15,13 +16,20 @@ type Entry struct {
 
 // Result is the shared input to JSON encoding and terminal rendering.
 type Result struct {
-	Version  int       `json:"version"`
-	Command  string    `json:"command"`
-	Status   string    `json:"status"`
-	View     Snapshot  `json:"view"`
-	Entries  []Entry   `json:"entries"`
-	Active   []Attempt `json:"active"`
-	Decision *Decision `json:"decision,omitzero"`
+	Version  int              `json:"version"`
+	Command  string           `json:"command"`
+	Status   string           `json:"status"`
+	View     Snapshot         `json:"view"`
+	Entries  []Entry          `json:"entries"`
+	Active   []Attempt        `json:"active"`
+	Decision *Decision        `json:"decision,omitzero"`
+	Feedback []FeedbackRecord `json:"feedback,omitempty"`
+}
+
+// FeedbackRecord retains captured scope and marks obsolete or addressed notes.
+type FeedbackRecord struct {
+	Attempt    Attempt `json:"attempt"`
+	Historical bool    `json:"historical"`
 }
 
 // Decision requires an explicit choice; it is not review approval.
@@ -71,6 +79,37 @@ func (s Service) Approve(ctx context.Context, first, last string) (Result, error
 	result.Entries = nil
 	for _, stack := range selected {
 		result.Entries = append(result.Entries, entryFor(state, stack))
+	}
+	return result, nil
+}
+
+// Feedback reads every persisted attempt with notes without changing either store.
+func (s Service) Feedback(ctx context.Context) (Result, error) {
+	view, err := s.Repository.Snapshot(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	state, err := (Store{Path: view.Path}).Load()
+	if err != nil {
+		return Result{}, err
+	}
+	result := Result{Version: 1, Command: "feedback", Status: "idle", View: view, Entries: []Entry{}, Active: activeAttempts(state)}
+	for _, attempt := range state.Attempts {
+		if len(attempt.Review) == 0 {
+			continue
+		}
+		var saved SavedReview
+		if err := json.Unmarshal(attempt.Review, &saved); err != nil {
+			return Result{}, fmt.Errorf("invalid stored review %s: %w", attempt.ID, err)
+		}
+		if saved.Status() != "feedback" {
+			continue
+		}
+		historical := !currentAttempt(view, state, attempt)
+		result.Feedback = append(result.Feedback, FeedbackRecord{Attempt: attempt, Historical: historical})
+		if !historical {
+			result.Status = "pending"
+		}
 	}
 	return result, nil
 }
@@ -162,6 +201,20 @@ func approvalAllowed(view Snapshot, state State) error {
 		}
 	}
 	return nil
+}
+
+func currentAttempt(view Snapshot, state State, attempt Attempt) bool {
+	for _, stack := range view.Stacks {
+		if !sameStack(stack, attempt.Stack) {
+			continue
+		}
+		latest := state.latest(stack)
+		if latest == nil {
+			return false
+		}
+		return latest.ID == attempt.ID
+	}
+	return false
 }
 
 func entryFor(state State, stack Stack) Entry {

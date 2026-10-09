@@ -40,6 +40,36 @@ Targets can be originals or feedback commits within that stack, but their subjec
 The summary omits approved stacks and includes active attempts, even when their original stacks disappeared from history.
 Current and historical feedback remain available in the result.
 
+### Collect saved feedback
+
+```sh
+umpire feedback
+umpire feedback --json
+```
+
+This read-only command returns notes persisted by Umpire, including reviews completed outside an agent session.
+It does not launch tuicr, recover an attempt, or change either review store.
+Interrupted sessions whose notes were not captured by Umpire still require explicit interactive recovery.
+
+Feedback results use the same versioned envelope as other commands, with `"command":"feedback"`.
+The optional `feedback` array contains records with these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `attempt` | Full persisted attempt, including its ID, captured stack, saved review, response, and replacement metadata |
+| `historical` | False only for the latest unaddressed attempt on an exact current stack |
+
+Saved reviews retain comments from all scopes, including drafts and session notes.
+Records appear in attempt order.
+Superseded attempts, changed or removed stacks, and addressed attempts remain historical context.
+The command does not infer that historical feedback needs another fix or that a changed stack resolved it.
+Malformed stored review data is an error rather than silently omitted feedback.
+
+The result is `pending` when current saved feedback exists and `idle` otherwise.
+An `idle` result can still include historical records.
+The `feedback` field is omitted when no saved notes exist, and `entries` is empty.
+Active attempts remain visible in `active`, but collecting feedback does not resume them.
+
 ### Review a stack
 
 ```sh
@@ -133,7 +163,7 @@ Agents must not infer approval or approve commits on the user's behalf.
 
 ## JSON output for agents
 
-All three commands accept `--json`, before or after the subcommand.
+All commands accept `--json`, before or after the subcommand.
 The command produces one JSON object followed by a newline on stdout.
 JSON and terminal output consume the same typed result.
 JSON retains full commit IDs, attempts, saved comments, session notes, and optional previous-version lineage.
@@ -153,6 +183,7 @@ Successful results contain:
 | `entries` | Unresolved stacks, or the stacks selected by approval/review |
 | `active` | Persisted active attempts |
 | `decision` | Required explicit choice, when present |
+| `feedback` | Current and historical saved feedback records for the feedback command, when notes exist |
 
 Needs-review outcomes are `pending` or `idle`.
 Review outcomes include `approved`, `feedback`, `incomplete`, `decision_required`, `cancelled`, `idle`, `range_complete`, and `no_waiting`.

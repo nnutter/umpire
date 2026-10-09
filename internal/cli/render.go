@@ -17,7 +17,13 @@ import (
 )
 
 func render(output io.Writer, result review.Result) error {
-	text, err := renderResult(result)
+	var text string
+	var err error
+	if result.Command == "feedback" {
+		text, err = renderFeedbackResult(result)
+	} else {
+		text, err = renderResult(result)
+	}
 	if err != nil {
 		return err
 	}
@@ -78,6 +84,42 @@ func renderDetails(out *strings.Builder, entries []review.Entry) error {
 			if err := renderAttempt(out, *entry.Previous, "Previous version (historical): "); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func renderFeedbackResult(result review.Result) (string, error) {
+	var out strings.Builder
+	fmt.Fprintln(&out, "Saved feedback: "+safeText(result.View.Branch))
+	fmt.Fprintln(&out, "Target: "+safeText(result.View.Target))
+	fmt.Fprintln(&out, "State: "+safeText(result.View.Path))
+	for _, attempt := range result.Active {
+		fmt.Fprintf(&out, "Active attempt: %s  %s\n", safeText(attempt.ID), shortStack(attempt.Stack))
+	}
+	if err := renderFeedback(&out, result.Feedback); err != nil {
+		return "", err
+	}
+	if result.Status == "idle" {
+		fmt.Fprintln(&out, "No current saved feedback.")
+	} else {
+		fmt.Fprintln(&out, "Current saved feedback is available.")
+	}
+	return strings.TrimSpace(out.String()), nil
+}
+
+func renderFeedback(out *strings.Builder, records []review.FeedbackRecord) error {
+	for _, record := range records {
+		label := "Current feedback"
+		if record.Historical {
+			label = "Historical feedback"
+		}
+		fmt.Fprintf(out, "%s: %s  %s  %s\n", label, safeText(record.Attempt.ID), shortStack(record.Attempt.Stack), safeText(record.Attempt.Stack.Subject))
+		if record.Attempt.Response != "" {
+			fmt.Fprintln(out, "  Response: "+safeText(record.Attempt.Response))
+		}
+		if err := renderAttempt(out, record.Attempt, ""); err != nil {
+			return err
 		}
 	}
 	return nil
