@@ -17,6 +17,15 @@ go install github.com/nnutter/umpire@latest
 
 For a local build, run `go build -o umpire .`.
 
+## Agent skill
+
+The portable [Umpire skill](skills/umpire/SKILL.md) instructs an agent to retrieve saved feedback and prepare amendments for re-review.
+Load it in your agent or install `skills/umpire/` in the agent's supported skills location.
+The initial workflow uses `umpire feedback --json` and native Git fixups targeting each stack tip.
+It replays later commits without autosquashing so feedback commits remain adjacent to their targets.
+The user launches reviews and controls approval.
+The skill does not register `/umpire` commands or implement background workers.
+
 ## Commands
 
 Run commands from the feature checkout or one of its subdirectories.
