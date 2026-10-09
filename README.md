@@ -194,5 +194,23 @@ mise run ci-tests
 mise run linters
 ```
 
-Tests use temporary repositories, synthetic saved sessions, and fake tuicr executables.
-They do not launch a real review or change an existing feature branch's history.
+The standard suite includes compiled-binary tests for listing, approval, errors, JSON output, and persistence across invocations.
+Focused unit and integration tests also use synthetic saved sessions and fake tuicr executables.
+
+Run the real-tuicr functional suite with:
+
+```sh
+mise run functional-tests
+```
+
+This task requires tuicr on `PATH` and permission to create pseudo-terminals.
+It runs the compiled Umpire binary against real tuicr, using terminal key input and tuicr's public annotation CLI.
+It checks complete reviews, incomplete feedback, and recovery of a saved review after Umpire is killed.
+A terminal emulator reconstructs screen updates instead of matching raw ANSI output.
+The real-tuicr tests skip in the standard suite unless `UMPIRE_REAL_TUICR=1` is set.
+When enabled, a missing tuicr executable or unavailable pseudo-terminal fails the tests.
+The suite is verified with tuicr v0.27.0.
+
+All tests use temporary repositories.
+Real-tuicr tests isolate HOME and the XDG config, cache, and data directories for child processes.
+They do not open reviews of an existing feature branch or access the user's saved review sessions.

@@ -14,6 +14,11 @@ alias = "test"
 description = "Run tests (with the race detector)"
 run = "go test -race -shuffle=on ./..."
 
+[tasks.functional-tests]
+description = "Test the compiled CLI and real tuicr through pseudo-terminals"
+env.UMPIRE_REAL_TUICR = "1"
+run = "go test -race -shuffle=on -count=1 ./internal/cli -run 'TestCommandsShareStructuredResults|TestJSONErrorsIncludeArgumentAndGitFailures|TestRealTuicr'"
+
 [tasks.coverage]
 alias = "cover"
 description = "Run tests and generate coverage report"
