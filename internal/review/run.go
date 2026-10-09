@@ -18,6 +18,8 @@ type ReviewOptions struct {
 	Stack   string
 	Choice  string
 	Session string
+	Start   string
+	End     string
 }
 
 // Reviewer runs tuicr directly, keeping its terminal output separate from results.
@@ -29,20 +31,26 @@ type Reviewer struct {
 }
 
 type reviewPlan struct {
-	view  Snapshot
-	state State
-	stack *Stack
-	prior *Attempt
+	view      Snapshot
+	state     State
+	stack     *Stack
+	prior     *Attempt
+	bounded   bool
+	exhausted bool
 }
 
 // Review returns a decision instead of guessing what an interrupted review means.
 func (r Reviewer) Review(ctx context.Context, options ReviewOptions) (Result, error) {
-	plan, err := r.plan(ctx, options.Stack)
+	plan, err := r.plan(ctx, options)
 	if err != nil {
 		return Result{}, err
 	}
 	result := makeResult("review", plan.view, plan.state)
 	if plan.stack == nil {
+		if plan.rangeComplete() {
+			result.Status = "range_complete"
+			return result, nil
+		}
 		if result.Status != "idle" {
 			result.Status = "no_waiting"
 		}
@@ -99,6 +107,64 @@ func (r Reviewer) begin(ctx context.Context, plan reviewPlan) (Attempt, error) {
 	return attempt, err
 }
 
+func (r Reviewer) boundedPlan(ctx context.Context, options ReviewOptions) (reviewPlan, error) {
+	if options.hasBounds() {
+		if options.Stack != "" {
+			return reviewPlan{}, fmt.Errorf("review bounds cannot be combined with an explicit stack")
+		}
+	}
+	view, err := r.Service.Repository.Snapshot(ctx)
+	if err != nil {
+		return reviewPlan{}, err
+	}
+	state, err := (Store{Path: view.Path}).Load()
+	if err != nil {
+		return reviewPlan{}, err
+	}
+	selected, err := r.bounds(ctx, view, options.Start, options.End)
+	if err != nil {
+		return reviewPlan{}, err
+	}
+	selection := view
+	selection.Stacks = selected
+	return reviewPlan{view: view, state: state, bounded: options.hasBounds(), exhausted: rangeApproved(selected, state), stack: nextStack(selection, state)}, nil
+}
+
+// bounds includes the complete stacks containing either endpoint.
+func (r Reviewer) bounds(ctx context.Context, view Snapshot, first, last string) ([]Stack, error) {
+	start, end := 0, len(view.Stacks)-1
+	for _, endpoint := range []struct {
+		ref   string
+		index *int
+	}{{first, &start}, {last, &end}} {
+		if endpoint.ref == "" {
+			continue
+		}
+		sha, err := r.Service.Repository.Resolve(ctx, endpoint.ref)
+		if err != nil {
+			return nil, err
+		}
+		found := false
+		for i, stack := range view.Stacks {
+			if slices.Contains(stack.Commits, sha) {
+				*endpoint.index = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("review boundary %s is outside the feature-branch review range", endpoint.ref)
+		}
+	}
+	if len(view.Stacks) == 0 {
+		return view.Stacks, nil
+	}
+	if end < start {
+		return nil, fmt.Errorf("review boundaries must be in oldest-first order")
+	}
+	return view.Stacks[start : end+1], nil
+}
+
 func (r Reviewer) execute(ctx context.Context, plan reviewPlan, options ReviewOptions) (result Result, err error) {
 	if plan.stack == nil {
 		return result, fmt.Errorf("no stack selected")
@@ -149,16 +215,13 @@ func (r Reviewer) launch(ctx context.Context, path string, stack Stack, lock *os
 	return nil
 }
 
-func (r Reviewer) plan(ctx context.Context, selector string) (reviewPlan, error) {
-	view, err := r.Service.Repository.Snapshot(ctx)
+func (r Reviewer) plan(ctx context.Context, options ReviewOptions) (reviewPlan, error) {
+	plan, err := r.boundedPlan(ctx, options)
 	if err != nil {
-		return reviewPlan{}, err
+		return plan, err
 	}
-	state, err := (Store{Path: view.Path}).Load()
-	if err != nil {
-		return reviewPlan{}, err
-	}
-	plan := reviewPlan{view: view, state: state}
+	selector := options.Stack
+	view, state := plan.view, plan.state
 	active := activeAttempts(state)
 	if len(active) > 1 {
 		return plan, fmt.Errorf("multiple active attempts in state; resolve them before review")
@@ -182,8 +245,6 @@ func (r Reviewer) plan(ctx context.Context, selector string) (reviewPlan, error)
 			return plan, err
 		}
 		plan.stack = &selected
-	} else {
-		plan.stack = nextStack(view, state)
 	}
 	if plan.stack != nil {
 		plan.prior = recoverablePrior(state, *plan.stack)
@@ -407,6 +468,33 @@ func replacementStack(plan reviewPlan) (Stack, error) {
 		}
 	}
 	return Stack{}, fmt.Errorf("interrupted stack is no longer current; select its replacement with umpire review <commit>")
+}
+
+func (options ReviewOptions) hasBounds() bool {
+	if options.Start != "" {
+		return true
+	}
+	return options.End != ""
+}
+
+func (plan reviewPlan) rangeComplete() bool {
+	if !plan.bounded {
+		return false
+	}
+	return plan.exhausted
+}
+
+func rangeApproved(stacks []Stack, state State) bool {
+	for _, stack := range stacks {
+		attempt := state.latest(stack)
+		if attempt == nil {
+			return false
+		}
+		if attempt.Status != "approved" {
+			return false
+		}
+	}
+	return true
 }
 
 func selectStack(ctx context.Context, repo Repository, view Snapshot, selector string) (Stack, error) {

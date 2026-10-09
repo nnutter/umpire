@@ -73,6 +73,26 @@ Commit-message review marks count toward completion.
 A successful process exit is not proof of approval.
 An untouched review leaves no attempt in Umpire's history and does not require recovery on the next invocation.
 
+### Bound automatic selection
+
+```sh
+umpire review --start abc123
+umpire review --start abc123 --end def456 --json
+umpire review --end def456
+```
+
+Each invocation reviews at most one eligible stack within the inclusive bounds.
+A boundary can identify any commit in a stack and includes the whole stack.
+An omitted start uses the first feature stack, and an omitted end uses the last.
+Boundaries must be in oldest-first order and belong to the feature-branch review range.
+Bounds cannot be combined with the positional stack selector.
+Approval and deferral still control automatic selection.
+An active attempt takes precedence over bounds and requires recovery, replacement, or cancellation.
+Recovery reopens that attempt's captured range, even when it lies outside the selected bounds.
+When all stacks within the bounds are approved, the result is `range_complete`, even if other stacks remain unresolved.
+If deferred stacks remain within the bounds, the result is `no_waiting` instead.
+The result's view and entries still describe the feature branch, not only the bounded range.
+
 ### Recover or replace an attempt
 
 An interrupted, incomplete, or feedback attempt on the selected stack requires an explicit choice.
@@ -135,7 +155,7 @@ Successful results contain:
 | `decision` | Required explicit choice, when present |
 
 Needs-review outcomes are `pending` or `idle`.
-Review outcomes include `approved`, `feedback`, `incomplete`, `decision_required`, `cancelled`, `idle`, and `no_waiting`.
+Review outcomes include `approved`, `feedback`, `incomplete`, `decision_required`, `cancelled`, `idle`, `range_complete`, and `no_waiting`.
 `no_waiting` means that deferred reviews remain unresolved, but none are eligible for automatic selection.
 Approval returns `approved`.
 A valid result exits with status 0, including feedback and required decisions.

@@ -121,6 +121,8 @@ func resultMessage(result review.Result) string {
 	switch result.Status {
 	case "idle":
 		return "No reviews pending."
+	case "range_complete":
+		return "No reviews pending in the selected range."
 	case "no_waiting":
 		return "No stacks waiting for review. Deferred reviews remain unapproved."
 	case "approved":

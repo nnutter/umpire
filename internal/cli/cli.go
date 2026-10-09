@@ -77,9 +77,9 @@ func (a *application) command() *cobra.Command {
 
 func (a *application) reviewCommand() *cobra.Command {
 	var recoverReview, replaceReview bool
-	var session string
+	var session, start, end string
 	cmd := &cobra.Command{Use: "review [<commit_stack>]", Aliases: []string{"challenge"}, Short: "Review the next stack, or select a current stack", Long: "Run tuicr in a stable detached worktree. Select a stack with a commit reference\nor inclusive original..tip endpoints. Existing interrupted or feedback attempts\nrequire an explicit recovery or replacement choice.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		options := review.ReviewOptions{Session: session}
+		options := review.ReviewOptions{Session: session, Start: start, End: end}
 		if len(args) > 0 {
 			options.Stack = args[0]
 		}
@@ -91,6 +91,8 @@ func (a *application) reviewCommand() *cobra.Command {
 		}
 		return a.runReview(cmd.Context(), options)
 	}}
+	cmd.Flags().StringVar(&start, "start", "", "Select from the stack containing this commit (inclusive)")
+	cmd.Flags().StringVar(&end, "end", "", "Select through the stack containing this commit (inclusive)")
 	cmd.Flags().BoolVar(&recoverReview, "recover", false, "Reopen the captured attempt in tuicr, preserving saved progress")
 	cmd.Flags().BoolVar(&replaceReview, "replace", false, "Launch a new attempt, retaining previous review history")
 	cmd.Flags().StringVar(&session, "session", "", "Select an exact saved session ID, slug, or indexed session path")

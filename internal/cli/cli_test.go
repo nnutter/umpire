@@ -107,6 +107,24 @@ func TestJSONErrorsIncludeArgumentAndGitFailures(t *testing.T) {
 	}
 }
 
+func TestReviewBoundsReachAutomaticSelection(t *testing.T) {
+	dir := featureRepo(t)
+	git(t, dir, "commit", "--allow-empty", "-m", "Second")
+	view, err := (review.Repository{Dir: dir}).Snapshot(t.Context())
+	require.NoError(t, err)
+	require.NoError(t, (review.Store{Path: view.Path}).Update(func(state *review.State) error {
+		state.Attempts = append(state.Attempts, review.Attempt{ID: "bounded", Stack: view.Stacks[1], Status: "incomplete", StartedAt: "2026-01-01T00:00:00Z"})
+		return nil
+	}))
+	out, terminal, err := execute(t, dir, "review", "--start", "HEAD", "--end", "HEAD", "--json")
+	require.NoError(t, err)
+	require.Empty(t, terminal)
+	var result review.Result
+	require.NoError(t, json.Unmarshal([]byte(out), &result))
+	require.Equal(t, "decision_required", result.Status)
+	require.Equal(t, "bounded", result.Decision.AttemptID)
+}
+
 func TestReviewAliasProducesDecisionWithoutPromptOrStateChanges(t *testing.T) {
 	dir := featureRepo(t)
 	view, err := (review.Repository{Dir: dir}).Snapshot(t.Context())
