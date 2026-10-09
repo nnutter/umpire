@@ -119,21 +119,39 @@ func TestReviewDiscardsUntouchedExit(t *testing.T) {
 	}
 }
 
-func TestReviewPreservesWorktreeChanges(t *testing.T) {
-	reviewer, view, _ := testReviewer(t)
+func TestReviewReusesDisposableCheckoutAtSelectedTip(t *testing.T) {
+	reviewer, _, _ := testReviewer(t)
+	r := reviewer.Service.Repository
 	fakeTuicr(t, "exit 0")
-	result, err := reviewer.Review(t.Context(), ReviewOptions{})
+	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, "file.txt"), []byte("first version"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, ".gitignore"), []byte("artifact.txt\n"), 0o600))
+	gitTest(t, r.Dir, "add", ".")
+	gitTest(t, r.Dir, "commit", "--amend", "--no-edit")
+	first := gitTest(t, r.Dir, "rev-parse", "HEAD")
+	result, err := reviewer.Review(t.Context(), ReviewOptions{Stack: first})
 	require.NoError(t, err)
 	require.Equal(t, "cancelled", result.Status)
-	path, err := WorktreePath(view.Stacks[0].Repo)
+	path, err := WorktreePath(r.Dir)
 	require.NoError(t, err)
-	local := filepath.Join(path, "local.txt")
-	require.NoError(t, os.WriteFile(local, []byte("preserve this"), 0o600))
-	_, err = reviewer.Review(t.Context(), ReviewOptions{Choice: "replace"})
-	require.ErrorContains(t, err, "local changes")
-	content, err := os.ReadFile(local)
+	require.NoError(t, os.WriteFile(filepath.Join(path, "file.txt"), []byte("incidental edit"), 0o600))
+	for _, name := range []string{"local.txt", "artifact.txt"} {
+		require.NoError(t, os.WriteFile(filepath.Join(path, name), []byte("disposable"), 0o600))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, "file.txt"), []byte("second version"), 0o600))
+	gitTest(t, r.Dir, "add", "file.txt")
+	gitTest(t, r.Dir, "commit", "-m", "Second version")
+	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, "local.txt"), []byte("preserve feature checkout"), 0o600))
+	result, err = reviewer.Review(t.Context(), ReviewOptions{Stack: "HEAD"})
 	require.NoError(t, err)
-	require.Equal(t, "preserve this", string(content))
+	require.Equal(t, "cancelled", result.Status)
+	content, err := os.ReadFile(filepath.Join(path, "file.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "second version", string(content))
+	require.Equal(t, "HEAD", gitTest(t, path, "rev-parse", "--abbrev-ref", "HEAD"))
+	require.Empty(t, gitTest(t, path, "status", "--porcelain", "--ignored"))
+	content, err = os.ReadFile(filepath.Join(r.Dir, "local.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "preserve feature checkout", string(content))
 }
 
 func TestDeferredReviewsRemainPending(t *testing.T) {

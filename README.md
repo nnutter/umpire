@@ -87,7 +87,11 @@ Umpire launches tuicr directly in a stable, detached worktree checked out at the
 The tuicr revision expression uses the original's parent through the stack tip, so the original commit is included.
 Tuicr's editor therefore opens the reviewed file version rather than the feature checkout's current version.
 Make fixes in the feature checkout, not the review worktree.
-Umpire refuses to overwrite local changes in the review worktree or use a worktree held by another Umpire review.
+The review checkout is disposable and is only for exploring the reviewed code, not making fixes.
+Before reuse, Umpire discards tracked edits, untracked files, and ignored artifacts in that checkout.
+It does not forcibly remove nested Git repositories.
+Umpire refuses to overwrite unrelated directories or attached branch checkouts at the review path.
+It also refuses to use a worktree held by another Umpire review.
 
 After tuicr exits, Umpire validates its saved review:
 
@@ -213,17 +217,23 @@ The branch name determines the state file, so a branch rename does not automatic
 Writes use an exclusive `.lock` file and atomic replacement.
 After a crashed writer, remove a stale state lock only after confirming that no writer is running.
 
-The review worktree uses Pi's path calculation:
+Each repository uses one persistent, detached review checkout:
 
 ```text
-$XDG_CACHE_HOME/tuicr-review-worktrees/<sanitized-repo-name>-<repo-path-hash>
+<git-common-dir>/umpire/worktree
 ```
 
-The fallback cache directory is `~/.cache`, including on macOS.
-Worktrees remain in place because tuicr associates saved sessions with their checkout paths.
-The adjacent `.umpire.lock` file uses an operating-system lock that releases when its last holder exits.
+All feature checkouts and branches sharing that Git common directory use the same review checkout and lock.
+Umpire checks out the selected stack tip so tuicr's editor opens the correct file version.
+Tuicr associates saved sessions with the checkout path and commit range, not just individual file paths.
+Identical stacks can reuse the same saved session across branches, while Umpire's attempt history remains branch-specific.
+No migration from the previous cache-based checkout location is performed.
+
+The adjacent `worktree.umpire.lock` file uses an operating-system lock that releases when its last holder exits.
 Do not delete this lock file to bypass an active review.
-Pi does not currently participate in Umpire's worktree locking, so do not run Pi and Umpire reviews concurrently in the same review worktree.
+The checkout remains in place between reviews, so routine reviews do not create disposable worktrees that need garbage collection.
+Other tools must not use or edit this checkout while Umpire holds its lock.
+Prepare fixes in the feature checkout or a separate writable workspace, never in the review checkout.
 
 Umpire reads tuicr's platform review store, then checks the other platform's location for existing sessions.
 Supported formats are review index `2.0` and saved session `1.3`.
