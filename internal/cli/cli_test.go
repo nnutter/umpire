@@ -165,7 +165,7 @@ func TestTuicrKeepsWorktreeLockedAfterUmpireDies(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	bin := t.TempDir()
 	binary := filepath.Join(bin, "umpire")
-	build := exec.CommandContext(t.Context(), "go", "build", "-o", binary, "../../cmd/umpire")
+	build := exec.CommandContext(t.Context(), "go", "build", "-o", binary, "../..")
 	buildOut, err := build.CombinedOutput()
 	require.NoError(t, err, "%s", buildOut)
 	started := filepath.Join(bin, "started")

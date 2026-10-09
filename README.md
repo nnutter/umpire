@@ -12,10 +12,10 @@ Cobra and Fang provide the command interface, Lip Gloss renders summaries, and H
 - Go 1.27.1 or later to build from source.
 
 ```sh
-go install github.com/nnutter/umpire/cmd/umpire@latest
+go install github.com/nnutter/umpire@latest
 ```
 
-For a local build, run `go build -o umpire ./cmd/umpire`.
+For a local build, run `go build -o umpire .`.
 
 ## Commands
 
