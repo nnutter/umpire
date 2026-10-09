@@ -1,6 +1,9 @@
 [tools]
 go = "1.27.1"
 
+[settings]
+activate_aggressive = true
+
 #####################
 # Development Tasks #
 #####################
