@@ -42,7 +42,6 @@ Current and historical feedback remain available in the result.
 
 ```sh
 umpire review
-umpire challenge
 umpire review HEAD
 umpire review abc123..def456
 ```
