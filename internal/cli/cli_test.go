@@ -159,7 +159,7 @@ func TestReviewKeepsTuicrOutputOffJSONStdout(t *testing.T) {
 	require.Equal(t, "tuicr terminal output\n", terminal)
 	var result review.Result
 	require.NoError(t, json.Unmarshal([]byte(out), &result))
-	require.Equal(t, "incomplete", result.Status)
+	require.Equal(t, "cancelled", result.Status)
 	require.NotContains(t, out, "tuicr terminal output")
 }
 

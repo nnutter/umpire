@@ -1,6 +1,7 @@
 package review
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -93,12 +94,37 @@ func TestInterruptedReviewRecoveryAndReplacement(t *testing.T) {
 	}
 }
 
-func TestReviewDoesNotApproveEmptyExitOrDestroyWorktreeChanges(t *testing.T) {
+func TestReviewDiscardsUntouchedExit(t *testing.T) {
+	for _, savedSession := range []bool{false, true} {
+		t.Run(fmt.Sprintf("saved=%t", savedSession), func(t *testing.T) {
+			reviewer, view, store := testReviewer(t)
+			fakeTuicr(t, "exit 0")
+			if savedSession {
+				scope := view.Stacks[0]
+				path, err := WorktreePath(scope.Repo)
+				require.NoError(t, err)
+				scope.Repo = path
+				savedFixture(t, scope, store, false)
+			}
+			for range 2 {
+				result, err := reviewer.Review(t.Context(), ReviewOptions{})
+				require.NoError(t, err)
+				require.Equal(t, "cancelled", result.Status)
+				require.Nil(t, result.Decision)
+				state, err := (Store{Path: view.Path}).Load()
+				require.NoError(t, err)
+				require.Empty(t, state.Attempts)
+			}
+		})
+	}
+}
+
+func TestReviewPreservesWorktreeChanges(t *testing.T) {
 	reviewer, view, _ := testReviewer(t)
 	fakeTuicr(t, "exit 0")
 	result, err := reviewer.Review(t.Context(), ReviewOptions{})
 	require.NoError(t, err)
-	require.Equal(t, "incomplete", result.Status)
+	require.Equal(t, "cancelled", result.Status)
 	path, err := WorktreePath(view.Stacks[0].Repo)
 	require.NoError(t, err)
 	local := filepath.Join(path, "local.txt")

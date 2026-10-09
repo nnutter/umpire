@@ -232,34 +232,60 @@ func (r Reviewer) recover(plan reviewPlan, attempt Attempt, selector string) (Re
 		}
 	}
 	var finished Attempt
+	untouched := untouchedReview(saved)
 	err = (Store{Path: plan.view.Path}).Update(func(state *State) error {
-		for i := range state.Attempts {
-			a := &state.Attempts[i]
-			if a.ID != attempt.ID {
-				continue
-			}
-			if a.Status != attempt.Status {
-				return fmt.Errorf("review attempt changed; retry")
-			}
-			a.Review = raw
-			a.Status = saved.Status()
-			a.Error = ""
-			if saved == nil {
-				a.Error = "No saved review for the captured range; this is not approval"
-			}
-			finished = *a
-			return nil
-		}
-		return fmt.Errorf("review attempt disappeared; retry")
+		var err error
+		finished, err = finishAttempt(state, attempt, saved, raw)
+		return err
 	})
 	if err != nil {
 		return Result{}, err
+	}
+	if untouched {
+		state, err := (Store{Path: plan.view.Path}).Load()
+		if err != nil {
+			return Result{}, err
+		}
+		result := makeResult("review", plan.view, state)
+		result.Status = "cancelled"
+		return result, nil
 	}
 	result := Result{Version: 1, Command: "review", Status: finished.Status, View: plan.view, Entries: []Entry{{Stack: finished.Stack, Status: finished.Status, Attempt: &finished}}, Active: []Attempt{}}
 	if finished.Status == "incomplete" {
 		result.Decision = &Decision{AttemptID: finished.ID, StackKey: finished.Stack.Key, Choices: []string{"recover", "replace", "cancel"}}
 	}
 	return result, nil
+}
+
+func untouchedReview(saved *SavedReview) bool {
+	if saved == nil {
+		return true
+	}
+	if saved.Status() != "incomplete" {
+		return false
+	}
+	return saved.Reviewed == 0
+}
+
+func finishAttempt(state *State, attempt Attempt, saved *SavedReview, raw []byte) (Attempt, error) {
+	for i := range state.Attempts {
+		a := &state.Attempts[i]
+		if a.ID != attempt.ID {
+			continue
+		}
+		if a.Status != attempt.Status {
+			return Attempt{}, fmt.Errorf("review attempt changed; retry")
+		}
+		if untouchedReview(saved) {
+			state.Attempts = slices.Delete(state.Attempts, i, i+1)
+			return Attempt{}, nil
+		}
+		a.Review = raw
+		a.Status = saved.Status()
+		a.Error = ""
+		return *a, nil
+	}
+	return Attempt{}, fmt.Errorf("review attempt disappeared; retry")
 }
 
 func checkActive(state State, prior *Attempt) error {

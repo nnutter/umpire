@@ -64,11 +64,13 @@ After tuicr exits, Umpire validates its saved review:
 | --- | --- |
 | Every file reviewed, without comments or session notes | `approved` |
 | Any comments or session notes, including drafts | `feedback` |
-| Missing session, or an incomplete review without notes | `incomplete` |
+| No reviewed files, comments, or session notes, including no saved session | `cancelled` (attempt discarded) |
+| Some reviewed files, but incomplete and without notes | `incomplete` |
 | Corrupt, unsupported, unreadable, or ambiguous session | Command error |
 
 Commit-message review marks count toward completion.
 A successful process exit is not proof of approval.
+An untouched review leaves no attempt in Umpire's history and does not require recovery on the next invocation.
 
 ### Recover or replace an attempt
 
