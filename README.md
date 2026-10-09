@@ -84,8 +84,9 @@ umpire review --replace
 umpire review --recover --session <session-id>
 ```
 
-Recovery reads the previous attempt's exact captured range without launching tuicr.
-It can produce approval, feedback, or an incomplete result.
+Recovery reopens tuicr at the previous attempt's exact captured range and preserves its attempt ID.
+Tuicr restores saved comments and review marks for that checkout and range.
+Umpire records the result only after tuicr exits.
 Replacement starts another attempt and retains the previous attempt in history.
 Neither operation proceeds while the review worktree is held by a live Umpire/tuicr process.
 
@@ -207,7 +208,7 @@ mise run functional-tests
 
 This task requires tuicr on `PATH` and permission to create pseudo-terminals.
 It runs the compiled Umpire binary against real tuicr, using terminal key input and tuicr's public annotation CLI.
-It checks complete reviews, incomplete feedback, and recovery of a saved review after Umpire is killed.
+It checks complete reviews, incomplete feedback, and interactive recovery of a saved review after Umpire is killed.
 It also selects recover, replace, and cancel through the actual terminal prompt and checks the resulting status through another CLI invocation.
 A terminal emulator reconstructs screen updates instead of matching raw ANSI output.
 The real-tuicr tests skip in the standard suite unless `UMPIRE_REAL_TUICR=1` is set.

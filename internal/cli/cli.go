@@ -91,7 +91,7 @@ func (a *application) reviewCommand() *cobra.Command {
 		}
 		return a.runReview(cmd.Context(), options)
 	}}
-	cmd.Flags().BoolVar(&recoverReview, "recover", false, "Read the captured attempt's saved session without launching tuicr")
+	cmd.Flags().BoolVar(&recoverReview, "recover", false, "Reopen the captured attempt in tuicr, preserving saved progress")
 	cmd.Flags().BoolVar(&replaceReview, "replace", false, "Launch a new attempt, retaining previous review history")
 	cmd.Flags().StringVar(&session, "session", "", "Select an exact saved session ID, slug, or indexed session path")
 	cmd.MarkFlagsMutuallyExclusive("recover", "replace")
@@ -165,7 +165,7 @@ func promptChoice(ctx context.Context, input io.Reader, output io.Writer, decisi
 	}
 	choice := "cancel"
 	selectField := huh.NewSelect[string]().Title("A previous review attempt exists").Description("Attempt: "+decision.AttemptID+"\nRecover saved feedback, replace the review, or leave it unchanged.").Options(
-		huh.NewOption("Recover saved review (no tuicr launch)", "recover"),
+		huh.NewOption("Recover saved review (reopen tuicr)", "recover"),
 		huh.NewOption("Replace with a new review", "replace"),
 		huh.NewOption("Cancel", "cancel"),
 	).Value(&choice)

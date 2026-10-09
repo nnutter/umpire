@@ -116,7 +116,7 @@ func (r Reviewer) execute(ctx context.Context, plan reviewPlan, options ReviewOp
 		if plan.prior == nil {
 			return result, fmt.Errorf("no previous attempt to recover")
 		}
-		return r.recover(plan, *plan.prior, options.Session)
+		return r.resume(ctx, path, plan, options.Session, lock)
 	}
 	replacement, err := replacementStack(plan)
 	if err != nil {
@@ -127,14 +127,7 @@ func (r Reviewer) execute(ctx context.Context, plan reviewPlan, options ReviewOp
 	if err != nil {
 		return result, err
 	}
-	if err := r.launch(ctx, path, attempt.Stack, lock); err != nil {
-		return result, errors.Join(err, recordFailure(plan.view.Path, attempt.ID, err))
-	}
-	result, err = r.recover(plan, attempt, options.Session)
-	if err != nil {
-		return result, errors.Join(err, recordFailure(plan.view.Path, attempt.ID, err))
-	}
-	return result, nil
+	return r.runAttempt(ctx, path, plan, attempt, options.Session, lock)
 }
 
 func (r Reviewer) launch(ctx context.Context, path string, stack Stack, lock *os.File) error {
@@ -255,6 +248,54 @@ func (r Reviewer) recover(plan reviewPlan, attempt Attempt, selector string) (Re
 		result.Decision = &Decision{AttemptID: finished.ID, StackKey: finished.Stack.Key, Choices: []string{"recover", "replace", "cancel"}}
 	}
 	return result, nil
+}
+
+func (r Reviewer) resume(ctx context.Context, path string, plan reviewPlan, session string, lock *os.File) (Result, error) {
+	// Tuicr resumes the saved session for the same checkout and range.
+	// Validate selection before launch rather than opening an ambiguous review.
+	if _, err := r.readAttempt(*plan.prior, session); err != nil {
+		return Result{}, err
+	}
+	attempt, err := resumeAttempt(plan.view.Path, *plan.prior)
+	if err != nil {
+		return Result{}, err
+	}
+	return r.runAttempt(ctx, path, plan, attempt, session, lock)
+}
+
+func (r Reviewer) runAttempt(ctx context.Context, path string, plan reviewPlan, attempt Attempt, session string, lock *os.File) (Result, error) {
+	if err := r.launch(ctx, path, attempt.Stack, lock); err != nil {
+		return Result{}, errors.Join(err, recordFailure(plan.view.Path, attempt.ID, err))
+	}
+	result, err := r.recover(plan, attempt, session)
+	if err != nil {
+		return result, errors.Join(err, recordFailure(plan.view.Path, attempt.ID, err))
+	}
+	return result, nil
+}
+
+func resumeAttempt(path string, prior Attempt) (Attempt, error) {
+	var attempt Attempt
+	err := (Store{Path: path}).Update(func(state *State) error {
+		if err := checkActive(*state, &prior); err != nil {
+			return err
+		}
+		for i := range state.Attempts {
+			a := &state.Attempts[i]
+			if a.ID != prior.ID {
+				continue
+			}
+			if a.Status != prior.Status {
+				return fmt.Errorf("review attempt changed; retry")
+			}
+			a.Status = "reviewing"
+			a.Error = ""
+			attempt = *a
+			return nil
+		}
+		return fmt.Errorf("review attempt disappeared; retry")
+	})
+	return attempt, err
 }
 
 func untouchedReview(saved *SavedReview) bool {
