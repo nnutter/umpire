@@ -34,7 +34,9 @@ umpire needs-review --json
 ```
 
 A stack contains one original commit and its immediately following `fixup!`, `amend!`, or `reword!` commits.
-Feedback commits must name the original's exact subject.
+Create feedback commits with `git commit --fixup=<stack-tip>`, `--fixup=amend:<stack-tip>`, or `--fixup=reword:<stack-tip>`.
+Insert each feedback commit immediately after its target stack, before the next original commit.
+Targets can be originals or feedback commits within that stack, but their subjects must identify exactly one earlier commit.
 The summary omits approved stacks and includes active attempts, even when their original stacks disappeared from history.
 Current and historical feedback remain available in the result.
 
