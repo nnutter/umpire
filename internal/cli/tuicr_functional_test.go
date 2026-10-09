@@ -78,7 +78,8 @@ func TestRealTuicrFeedback(t *testing.T) {
 	require.Len(t, sessions, 1)
 	require.True(t, sessions[0].Active)
 	runRealCommand(t, "tuicr", dir, env, "review", "add", "--session", sessions[0].Path, "--target-file", "feature.txt", "--line", "1", "--type", "issue", "Handle the empty case")
-	session.send(t, ":q!\r")
+	// Saving feedback must exit without asking the user to export it.
+	session.send(t, ":wq\r")
 	out := session.waitExit(t)
 	var result struct {
 		Status  string `json:"status"`

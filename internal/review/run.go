@@ -134,10 +134,12 @@ func (r Reviewer) launch(ctx context.Context, path string, stack Stack, lock *os
 	if err := prepareWorktree(ctx, r.Service.Repository, path, stack); err != nil {
 		return err
 	}
-	cmd := exec.CommandContext(ctx, "tuicr", "--no-update-check", "-r", stack.Base+".."+stack.Tip)
+	cmd := exec.CommandContext(ctx, "tuicr", "--no-update-check", "--stdout", "-r", stack.Base+".."+stack.Tip)
 	cmd.Dir = path
 	cmd.Stdin = r.Input
-	cmd.Stdout = r.Terminal
+	// --stdout bypasses tuicr's clipboard confirmation. The TUI uses /dev/tty;
+	// Umpire reads persisted feedback instead of the exported markdown.
+	cmd.Stdout = io.Discard
 	cmd.Stderr = r.Terminal
 	// Keep the worktree locked if Umpire dies while tuicr is still running.
 	cmd.ExtraFiles = []*os.File{lock}

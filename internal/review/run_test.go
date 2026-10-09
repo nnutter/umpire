@@ -49,7 +49,7 @@ func TestReviewCapturesScopeAndReadsResult(t *testing.T) {
 	require.NotNil(t, result.Entries[0].Attempt)
 	launch, err := os.ReadFile(log)
 	require.NoError(t, err)
-	require.Contains(t, string(launch), path+"\n--no-update-check\n-r\n"+view.Stacks[0].Base+".."+view.Stacks[0].Tip)
+	require.Contains(t, string(launch), path+"\n--no-update-check\n--stdout\n-r\n"+view.Stacks[0].Base+".."+view.Stacks[0].Tip)
 	require.Equal(t, view.Stacks[0].Tip, gitTest(t, path, "rev-parse", "HEAD"))
 	require.NotEmpty(t, result.Entries[0].Attempt.Review)
 	state, err := (Store{Path: view.Path}).Load()

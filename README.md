@@ -116,7 +116,9 @@ All three commands accept `--json`, before or after the subcommand.
 The command produces one JSON object followed by a newline on stdout.
 JSON and terminal output consume the same typed result.
 JSON retains full commit IDs, attempts, saved comments, session notes, and optional previous-version lineage.
-Tuicr's interactive output goes to stderr, not the JSON stream.
+Tuicr renders its interactive view through the controlling terminal, with diagnostics on stderr, not the JSON stream.
+Umpire launches tuicr with `--stdout` to bypass clipboard confirmation and discards its Markdown export.
+Feedback comes from the persisted review session.
 `--json` disables Umpire's recovery prompt, but a new tuicr review still requires an interactive terminal.
 
 Successful results contain:

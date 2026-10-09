@@ -152,7 +152,7 @@ func TestReviewKeepsTuicrOutputOffJSONStdout(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	bin := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(bin, "tuicr"), []byte("#!/bin/sh\nprintf 'tuicr terminal output\\n'\n"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "tuicr"), []byte("#!/bin/sh\nprintf 'tuicr terminal output\\n' >&2\nprintf 'exported feedback\\n'\n"), 0o700))
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	out, terminal, err := execute(t, dir, "review", "--json")
 	require.NoError(t, err)
@@ -161,6 +161,7 @@ func TestReviewKeepsTuicrOutputOffJSONStdout(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &result))
 	require.Equal(t, "cancelled", result.Status)
 	require.NotContains(t, out, "tuicr terminal output")
+	require.NotContains(t, out, "exported feedback")
 }
 
 func TestTuicrKeepsWorktreeLockedAfterUmpireDies(t *testing.T) {
