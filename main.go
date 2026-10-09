@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	if err := cli.Execute(context.Background(), os.Args[1:], ".", os.Stdin, os.Stdout, os.Stderr, Version); err != nil {
+	if err := cli.Execute(context.Background(), os.Args[1:], ".", os.Stdin, os.Stdout, os.Stderr, version); err != nil {
 		os.Exit(1)
 	}
 }

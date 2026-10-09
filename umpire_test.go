@@ -9,5 +9,5 @@ import (
 func TestVersion(t *testing.T) {
 	t.Parallel()
 
-	require.NotEmpty(t, Version)
+	require.NotEmpty(t, version)
 }
