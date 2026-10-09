@@ -213,5 +213,7 @@ When enabled, a missing tuicr executable or unavailable pseudo-terminal fails th
 The suite is verified with tuicr v0.27.0.
 
 All tests use temporary repositories.
+Each test package removes inherited `GIT_*` variables before its tests start and disables global/system Git configuration.
+This isolates in-process Git calls and child commands from a surrounding rebase's repository, index, object directory, and injected configuration.
 Real-tuicr tests isolate HOME and the XDG config, cache, and data directories for child processes.
 They do not open reviews of an existing feature branch or access the user's saved review sessions.
