@@ -53,14 +53,21 @@ type application struct {
 func (a *application) command() *cobra.Command {
 	root := &cobra.Command{Use: "umpire", Short: "Review feature-branch commit stacks with tuicr", Long: "Umpire tracks review of exact commit stacks against the configured Git upstream.\nApproval never transfers to rewritten commits or added fixups."}
 	root.PersistentFlags().BoolVar(&a.json, "json", a.json, "Emit a versioned JSON result without interactive prompts")
-	list := &cobra.Command{Use: "list", Aliases: []string{"ls"}, Short: "Show unresolved stacks and active review attempts", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	needsReview := &cobra.Command{Use: "needs-review", Short: "Show unresolved stacks and active review attempts", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		result, err := a.service.List(cmd.Context())
 		if err != nil {
 			return err
 		}
 		return a.write(result)
 	}}
-	approve := &cobra.Command{Use: "approve <start_commit> [<end_commit>]", Short: "Record explicit user approval of complete stacks", Long: "Record user approval without launching tuicr. Endpoints are inclusive and\nmust include complete stacks, including all attached feedback commits.", Args: cobra.RangeArgs(1, 2), RunE: func(cmd *cobra.Command, args []string) error {
+	feedback := &cobra.Command{Use: "feedback", Short: "Read current and historical saved feedback without launching tuicr", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		result, err := a.service.Feedback(cmd.Context())
+		if err != nil {
+			return err
+		}
+		return a.write(result)
+	}}
+	approve := &cobra.Command{Use: "approve <start_commit> [<end_commit>]", Aliases: []string{"confirm"}, Short: "Record explicit user approval of complete stacks", Long: "Record user approval without launching tuicr. Endpoints are inclusive and\nmust include complete stacks, including all attached feedback commits.", Args: cobra.RangeArgs(1, 2), RunE: func(cmd *cobra.Command, args []string) error {
 		last := ""
 		if len(args) == 2 {
 			last = args[1]
@@ -71,15 +78,15 @@ func (a *application) command() *cobra.Command {
 		}
 		return a.write(result)
 	}}
-	root.AddCommand(list, approve, a.reviewCommand())
+	root.AddCommand(needsReview, feedback, approve, a.reviewCommand())
 	return root
 }
 
 func (a *application) reviewCommand() *cobra.Command {
 	var recoverReview, replaceReview bool
-	var session string
+	var session, start, end string
 	cmd := &cobra.Command{Use: "review [<commit_stack>]", Aliases: []string{"challenge"}, Short: "Review the next stack, or select a current stack", Long: "Run tuicr in a stable detached worktree. Select a stack with a commit reference\nor inclusive original..tip endpoints. Existing interrupted or feedback attempts\nrequire an explicit recovery or replacement choice.", Args: cobra.MaximumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		options := review.ReviewOptions{Session: session}
+		options := review.ReviewOptions{Session: session, Start: start, End: end}
 		if len(args) > 0 {
 			options.Stack = args[0]
 		}
@@ -91,7 +98,9 @@ func (a *application) reviewCommand() *cobra.Command {
 		}
 		return a.runReview(cmd.Context(), options)
 	}}
-	cmd.Flags().BoolVar(&recoverReview, "recover", false, "Read the captured attempt's saved session without launching tuicr")
+	cmd.Flags().StringVar(&start, "start", "", "Select from the stack containing this commit (inclusive)")
+	cmd.Flags().StringVar(&end, "end", "", "Select through the stack containing this commit (inclusive)")
+	cmd.Flags().BoolVar(&recoverReview, "recover", false, "Reopen the captured attempt in tuicr, preserving saved progress")
 	cmd.Flags().BoolVar(&replaceReview, "replace", false, "Launch a new attempt, retaining previous review history")
 	cmd.Flags().StringVar(&session, "session", "", "Select an exact saved session ID, slug, or indexed session path")
 	cmd.MarkFlagsMutuallyExclusive("recover", "replace")
@@ -165,7 +174,7 @@ func promptChoice(ctx context.Context, input io.Reader, output io.Writer, decisi
 	}
 	choice := "cancel"
 	selectField := huh.NewSelect[string]().Title("A previous review attempt exists").Description("Attempt: "+decision.AttemptID+"\nRecover saved feedback, replace the review, or leave it unchanged.").Options(
-		huh.NewOption("Recover saved review (no tuicr launch)", "recover"),
+		huh.NewOption("Recover saved review (reopen tuicr)", "recover"),
 		huh.NewOption("Replace with a new review", "replace"),
 		huh.NewOption("Cancel", "cancel"),
 	).Value(&choice)

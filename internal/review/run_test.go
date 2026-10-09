@@ -1,6 +1,7 @@
 package review
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -48,7 +49,7 @@ func TestReviewCapturesScopeAndReadsResult(t *testing.T) {
 	require.NotNil(t, result.Entries[0].Attempt)
 	launch, err := os.ReadFile(log)
 	require.NoError(t, err)
-	require.Contains(t, string(launch), path+"\n--no-update-check\n-r\n"+view.Stacks[0].Base+".."+view.Stacks[0].Tip)
+	require.Contains(t, string(launch), path+"\n--no-update-check\n--stdout\n-r\n"+view.Stacks[0].Base+".."+view.Stacks[0].Tip)
 	require.Equal(t, view.Stacks[0].Tip, gitTest(t, path, "rev-parse", "HEAD"))
 	require.NotEmpty(t, result.Entries[0].Attempt.Review)
 	state, err := (Store{Path: view.Path}).Load()
@@ -93,21 +94,64 @@ func TestInterruptedReviewRecoveryAndReplacement(t *testing.T) {
 	}
 }
 
-func TestReviewDoesNotApproveEmptyExitOrDestroyWorktreeChanges(t *testing.T) {
-	reviewer, view, _ := testReviewer(t)
+func TestReviewDiscardsUntouchedExit(t *testing.T) {
+	for _, savedSession := range []bool{false, true} {
+		t.Run(fmt.Sprintf("saved=%t", savedSession), func(t *testing.T) {
+			reviewer, view, store := testReviewer(t)
+			fakeTuicr(t, "exit 0")
+			if savedSession {
+				scope := view.Stacks[0]
+				path, err := WorktreePath(scope.Repo)
+				require.NoError(t, err)
+				scope.Repo = path
+				savedFixture(t, scope, store, false)
+			}
+			for range 2 {
+				result, err := reviewer.Review(t.Context(), ReviewOptions{})
+				require.NoError(t, err)
+				require.Equal(t, "cancelled", result.Status)
+				require.Nil(t, result.Decision)
+				state, err := (Store{Path: view.Path}).Load()
+				require.NoError(t, err)
+				require.Empty(t, state.Attempts)
+			}
+		})
+	}
+}
+
+func TestReviewReusesDisposableCheckoutAtSelectedTip(t *testing.T) {
+	reviewer, _, _ := testReviewer(t)
+	r := reviewer.Service.Repository
 	fakeTuicr(t, "exit 0")
-	result, err := reviewer.Review(t.Context(), ReviewOptions{})
+	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, "file.txt"), []byte("first version"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, ".gitignore"), []byte("artifact.txt\n"), 0o600))
+	gitTest(t, r.Dir, "add", ".")
+	gitTest(t, r.Dir, "commit", "--amend", "--no-edit")
+	first := gitTest(t, r.Dir, "rev-parse", "HEAD")
+	result, err := reviewer.Review(t.Context(), ReviewOptions{Stack: first})
 	require.NoError(t, err)
-	require.Equal(t, "incomplete", result.Status)
-	path, err := WorktreePath(view.Stacks[0].Repo)
+	require.Equal(t, "cancelled", result.Status)
+	path, err := WorktreePath(r.Dir)
 	require.NoError(t, err)
-	local := filepath.Join(path, "local.txt")
-	require.NoError(t, os.WriteFile(local, []byte("preserve this"), 0o600))
-	_, err = reviewer.Review(t.Context(), ReviewOptions{Choice: "replace"})
-	require.ErrorContains(t, err, "local changes")
-	content, err := os.ReadFile(local)
+	require.NoError(t, os.WriteFile(filepath.Join(path, "file.txt"), []byte("incidental edit"), 0o600))
+	for _, name := range []string{"local.txt", "artifact.txt"} {
+		require.NoError(t, os.WriteFile(filepath.Join(path, name), []byte("disposable"), 0o600))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, "file.txt"), []byte("second version"), 0o600))
+	gitTest(t, r.Dir, "add", "file.txt")
+	gitTest(t, r.Dir, "commit", "-m", "Second version")
+	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, "local.txt"), []byte("preserve feature checkout"), 0o600))
+	result, err = reviewer.Review(t.Context(), ReviewOptions{Stack: "HEAD"})
 	require.NoError(t, err)
-	require.Equal(t, "preserve this", string(content))
+	require.Equal(t, "cancelled", result.Status)
+	content, err := os.ReadFile(filepath.Join(path, "file.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "second version", string(content))
+	require.Equal(t, "HEAD", gitTest(t, path, "rev-parse", "--abbrev-ref", "HEAD"))
+	require.Empty(t, gitTest(t, path, "status", "--porcelain", "--ignored"))
+	content, err = os.ReadFile(filepath.Join(r.Dir, "local.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "preserve feature checkout", string(content))
 }
 
 func TestDeferredReviewsRemainPending(t *testing.T) {

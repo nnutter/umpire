@@ -17,7 +17,13 @@ import (
 )
 
 func render(output io.Writer, result review.Result) error {
-	text, err := renderResult(result)
+	var text string
+	var err error
+	if result.Command == "feedback" {
+		text, err = renderFeedbackResult(result)
+	} else {
+		text, err = renderResult(result)
+	}
 	if err != nil {
 		return err
 	}
@@ -57,7 +63,9 @@ func renderResult(result review.Result) (string, error) {
 	if err := renderDetails(&out, result.Entries); err != nil {
 		return "", err
 	}
-	fmt.Fprintln(&out, resultMessage(result))
+	if message := resultMessage(result); message != "" {
+		fmt.Fprintln(&out, message)
+	}
 	if result.Decision != nil {
 		fmt.Fprintf(&out, "Attempt: %s\n", safeText(result.Decision.AttemptID))
 		fmt.Fprintln(&out, "Choose umpire review --recover, umpire review --replace, or leave the attempt unchanged.")
@@ -76,6 +84,42 @@ func renderDetails(out *strings.Builder, entries []review.Entry) error {
 			if err := renderAttempt(out, *entry.Previous, "Previous version (historical): "); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func renderFeedbackResult(result review.Result) (string, error) {
+	var out strings.Builder
+	fmt.Fprintln(&out, "Saved feedback: "+safeText(result.View.Branch))
+	fmt.Fprintln(&out, "Target: "+safeText(result.View.Target))
+	fmt.Fprintln(&out, "State: "+safeText(result.View.Path))
+	for _, attempt := range result.Active {
+		fmt.Fprintf(&out, "Active attempt: %s  %s\n", safeText(attempt.ID), shortStack(attempt.Stack))
+	}
+	if err := renderFeedback(&out, result.Feedback); err != nil {
+		return "", err
+	}
+	if result.Status == "idle" {
+		fmt.Fprintln(&out, "No current saved feedback.")
+	} else {
+		fmt.Fprintln(&out, "Current saved feedback is available.")
+	}
+	return strings.TrimSpace(out.String()), nil
+}
+
+func renderFeedback(out *strings.Builder, records []review.FeedbackRecord) error {
+	for _, record := range records {
+		label := "Current feedback"
+		if record.Historical {
+			label = "Historical feedback"
+		}
+		fmt.Fprintf(out, "%s: %s  %s  %s\n", label, safeText(record.Attempt.ID), shortStack(record.Attempt.Stack), safeText(record.Attempt.Stack.Subject))
+		if record.Attempt.Response != "" {
+			fmt.Fprintln(out, "  Response: "+safeText(record.Attempt.Response))
+		}
+		if err := renderAttempt(out, record.Attempt, ""); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -119,6 +163,8 @@ func resultMessage(result review.Result) string {
 	switch result.Status {
 	case "idle":
 		return "No reviews pending."
+	case "range_complete":
+		return "No reviews pending in the selected range."
 	case "no_waiting":
 		return "No stacks waiting for review. Deferred reviews remain unapproved."
 	case "approved":
@@ -132,7 +178,7 @@ func resultMessage(result review.Result) string {
 	case "cancelled":
 		return "Review cancelled. The attempt remains unchanged."
 	default:
-		return "Approved stacks are omitted from this summary."
+		return ""
 	}
 }
 

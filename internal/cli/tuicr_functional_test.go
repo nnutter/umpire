@@ -78,7 +78,8 @@ func TestRealTuicrFeedback(t *testing.T) {
 	require.Len(t, sessions, 1)
 	require.True(t, sessions[0].Active)
 	runRealCommand(t, "tuicr", dir, env, "review", "add", "--session", sessions[0].Path, "--target-file", "feature.txt", "--line", "1", "--type", "issue", "Handle the empty case")
-	session.send(t, ":q!\r")
+	// Saving feedback must exit without asking the user to export it.
+	session.send(t, ":wq\r")
 	out := session.waitExit(t)
 	var result struct {
 		Status  string `json:"status"`
@@ -104,7 +105,7 @@ func TestRealTuicrFeedback(t *testing.T) {
 	require.Equal(t, "Handle the empty case", saved.Comments[0].Content)
 	require.Equal(t, "feature.txt", saved.Comments[0].Path)
 	require.Equal(t, "line", saved.Comments[0].Location)
-	listed := runRealCommand(t, binary, dir, env, "list")
+	listed := runRealCommand(t, binary, dir, env, "needs-review")
 	require.Contains(t, listed, "Feedback")
 	require.Contains(t, listed, "feature.txt:1: Handle the empty case")
 }
@@ -152,7 +153,13 @@ func TestRealTuicrInterruptedRecovery(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(before), &decision))
 	require.Equal(t, "decision_required", decision.Status)
 	require.NotEmpty(t, decision.Decision.AttemptID)
-	out := runRealCommand(t, binary, dir, env, "review", "--recover", "--json")
+	resumed := startTerminal(t, binary, dir, env, "review", "--recover", "--json")
+	resumed.waitFor(t, "feature.txt")
+	resumed.waitFor(t, "1/2")
+	resumed.send(t, ":set noreviewed\rr")
+	resumed.waitFor(t, "All files reviewed")
+	resumed.send(t, ":wq\r")
+	out := resumed.waitExit(t)
 	var result struct {
 		Status  string `json:"status"`
 		Entries []struct {
@@ -166,11 +173,11 @@ func TestRealTuicrInterruptedRecovery(t *testing.T) {
 		} `json:"entries"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(out), &result))
-	require.Equal(t, "incomplete", result.Status)
+	require.Equal(t, "approved", result.Status)
 	require.Len(t, result.Entries, 1)
 	require.Equal(t, decision.Decision.AttemptID, result.Entries[0].Attempt.ID)
-	require.False(t, result.Entries[0].Attempt.Review.Complete)
-	require.Equal(t, 1, result.Entries[0].Attempt.Review.Reviewed)
+	require.True(t, result.Entries[0].Attempt.Review.Complete)
+	require.Equal(t, 2, result.Entries[0].Attempt.Review.Reviewed)
 }
 
 func TestRealTuicrRecoveryPrompt(t *testing.T) {
@@ -201,6 +208,11 @@ func TestRealTuicrRecoveryPrompt(t *testing.T) {
 			switch choice {
 			case "recover":
 				prompt.send(t, "kk\r")
+				prompt.waitFor(t, "feature.txt")
+				prompt.waitFor(t, "1/2")
+				prompt.send(t, ":set noreviewed\rr")
+				prompt.waitFor(t, "All files reviewed")
+				prompt.send(t, ":wq\r")
 			case "replace":
 				prompt.send(t, "k\r")
 				prompt.waitFor(t, "feature.txt")
@@ -212,14 +224,12 @@ func TestRealTuicrRecoveryPrompt(t *testing.T) {
 			}
 			out := prompt.waitExit(t)
 			switch choice {
-			case "recover":
-				require.Contains(t, out, "Review is incomplete, not approved.")
-			case "replace":
+			case "recover", "replace":
 				require.Contains(t, out, "Approved. Approval applies only to the recorded commits.")
 			case "cancel":
 				require.Contains(t, out, "Review cancelled. The attempt remains unchanged.")
 			}
-			after := runRealCommand(t, binary, dir, env, "list", "--json")
+			after := runRealCommand(t, binary, dir, env, "needs-review", "--json")
 			var result struct {
 				Status  string `json:"status"`
 				Entries []struct {
@@ -230,7 +240,7 @@ func TestRealTuicrRecoveryPrompt(t *testing.T) {
 				} `json:"entries"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(after), &result))
-			if choice == "replace" {
+			if choice != "cancel" {
 				require.Equal(t, "idle", result.Status)
 				require.Empty(t, result.Entries)
 			} else {
@@ -271,7 +281,7 @@ func TestRealTuicrCleanReview(t *testing.T) {
 	require.True(t, result.Entries[0].Attempt.Review.Complete)
 	require.Equal(t, 2, result.Entries[0].Attempt.Review.Reviewed)
 	require.Equal(t, 2, result.Entries[0].Attempt.Review.Files)
-	listed := runRealCommand(t, binary, dir, env, "list", "--json")
+	listed := runRealCommand(t, binary, dir, env, "needs-review", "--json")
 	var status struct {
 		Status string `json:"status"`
 	}

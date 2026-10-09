@@ -17,6 +17,15 @@ go install github.com/nnutter/umpire@latest
 
 For a local build, run `go build -o umpire .`.
 
+## Agent skill
+
+The portable [Umpire skill](skills/umpire/SKILL.md) instructs an agent to retrieve saved feedback and prepare amendments for re-review.
+Load it in your agent or install `skills/umpire/` in the agent's supported skills location.
+The initial workflow uses `umpire feedback --json` and native Git fixups targeting each stack tip.
+It replays later commits without autosquashing so feedback commits remain adjacent to their targets.
+The user launches reviews and controls approval.
+The skill does not register `/umpire` commands or implement background workers.
+
 ## Commands
 
 Run commands from the feature checkout or one of its subdirectories.
@@ -29,20 +38,51 @@ Configure the intended upstream explicitly with Git.
 ### List unresolved stacks
 
 ```sh
-umpire list
-umpire ls --json
+umpire needs-review
+umpire needs-review --json
 ```
 
 A stack contains one original commit and its immediately following `fixup!`, `amend!`, or `reword!` commits.
-Feedback commits must name the original's exact subject.
+Create feedback commits with `git commit --fixup=<stack-tip>`, `--fixup=amend:<stack-tip>`, or `--fixup=reword:<stack-tip>`.
+Insert each feedback commit immediately after its target stack, before the next original commit.
+Targets can be originals or feedback commits within that stack, but their subjects must identify exactly one earlier commit.
 The summary omits approved stacks and includes active attempts, even when their original stacks disappeared from history.
 Current and historical feedback remain available in the result.
+
+### Collect saved feedback
+
+```sh
+umpire feedback
+umpire feedback --json
+```
+
+This read-only command returns notes persisted by Umpire, including reviews completed outside an agent session.
+It does not launch tuicr, recover an attempt, or change either review store.
+Interrupted sessions whose notes were not captured by Umpire still require explicit interactive recovery.
+
+Feedback results use the same versioned envelope as other commands, with `"command":"feedback"`.
+The optional `feedback` array contains records with these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `attempt` | Full persisted attempt, including its ID, captured stack, saved review, response, and replacement metadata |
+| `historical` | False only for the latest unaddressed attempt on an exact current stack |
+
+Saved reviews retain comments from all scopes, including drafts and session notes.
+Records appear in attempt order.
+Superseded attempts, changed or removed stacks, and addressed attempts remain historical context.
+The command does not infer that historical feedback needs another fix or that a changed stack resolved it.
+Malformed stored review data is an error rather than silently omitted feedback.
+
+The result is `pending` when current saved feedback exists and `idle` otherwise.
+An `idle` result can still include historical records.
+The `feedback` field is omitted when no saved notes exist, and `entries` is empty.
+Active attempts remain visible in `active`, but collecting feedback does not resume them.
 
 ### Review a stack
 
 ```sh
 umpire review
-umpire challenge
 umpire review HEAD
 umpire review abc123..def456
 ```
@@ -56,7 +96,11 @@ Umpire launches tuicr directly in a stable, detached worktree checked out at the
 The tuicr revision expression uses the original's parent through the stack tip, so the original commit is included.
 Tuicr's editor therefore opens the reviewed file version rather than the feature checkout's current version.
 Make fixes in the feature checkout, not the review worktree.
-Umpire refuses to overwrite local changes in the review worktree or use a worktree held by another Umpire review.
+The review checkout is disposable and is only for exploring the reviewed code, not making fixes.
+Before reuse, Umpire discards tracked edits, untracked files, and ignored artifacts in that checkout.
+It does not forcibly remove nested Git repositories.
+Umpire refuses to overwrite unrelated directories or attached branch checkouts at the review path.
+It also refuses to use a worktree held by another Umpire review.
 
 After tuicr exits, Umpire validates its saved review:
 
@@ -64,11 +108,33 @@ After tuicr exits, Umpire validates its saved review:
 | --- | --- |
 | Every file reviewed, without comments or session notes | `approved` |
 | Any comments or session notes, including drafts | `feedback` |
-| Missing session, or an incomplete review without notes | `incomplete` |
+| No reviewed files, comments, or session notes, including no saved session | `cancelled` (attempt discarded) |
+| Some reviewed files, but incomplete and without notes | `incomplete` |
 | Corrupt, unsupported, unreadable, or ambiguous session | Command error |
 
 Commit-message review marks count toward completion.
 A successful process exit is not proof of approval.
+An untouched review leaves no attempt in Umpire's history and does not require recovery on the next invocation.
+
+### Bound automatic selection
+
+```sh
+umpire review --start abc123
+umpire review --start abc123 --end def456 --json
+umpire review --end def456
+```
+
+Each invocation reviews at most one eligible stack within the inclusive bounds.
+A boundary can identify any commit in a stack and includes the whole stack.
+An omitted start uses the first feature stack, and an omitted end uses the last.
+Boundaries must be in oldest-first order and belong to the feature-branch review range.
+Bounds cannot be combined with the positional stack selector.
+Approval and deferral still control automatic selection.
+An active attempt takes precedence over bounds and requires recovery, replacement, or cancellation.
+Recovery reopens that attempt's captured range, even when it lies outside the selected bounds.
+When all stacks within the bounds are approved, the result is `range_complete`, even if other stacks remain unresolved.
+If deferred stacks remain within the bounds, the result is `no_waiting` instead.
+The result's view and entries still describe the feature branch, not only the bounded range.
 
 ### Recover or replace an attempt
 
@@ -82,8 +148,9 @@ umpire review --replace
 umpire review --recover --session <session-id>
 ```
 
-Recovery reads the previous attempt's exact captured range without launching tuicr.
-It can produce approval, feedback, or an incomplete result.
+Recovery reopens tuicr at the previous attempt's exact captured range and preserves its attempt ID.
+Tuicr restores saved comments and review marks for that checkout and range.
+Umpire records the result only after tuicr exits.
 Replacement starts another attempt and retains the previous attempt in history.
 Neither operation proceeds while the review worktree is held by a live Umpire/tuicr process.
 
@@ -109,11 +176,13 @@ Agents must not infer approval or approve commits on the user's behalf.
 
 ## JSON output for agents
 
-All three commands accept `--json`, before or after the subcommand.
+All commands accept `--json`, before or after the subcommand.
 The command produces one JSON object followed by a newline on stdout.
 JSON and terminal output consume the same typed result.
 JSON retains full commit IDs, attempts, saved comments, session notes, and optional previous-version lineage.
-Tuicr's interactive output goes to stderr, not the JSON stream.
+Tuicr renders its interactive view through the controlling terminal, with diagnostics on stderr, not the JSON stream.
+Umpire launches tuicr with `--stdout` to bypass clipboard confirmation and discards its Markdown export.
+Feedback comes from the persisted review session.
 `--json` disables Umpire's recovery prompt, but a new tuicr review still requires an interactive terminal.
 
 Successful results contain:
@@ -127,9 +196,10 @@ Successful results contain:
 | `entries` | Unresolved stacks, or the stacks selected by approval/review |
 | `active` | Persisted active attempts |
 | `decision` | Required explicit choice, when present |
+| `feedback` | Current and historical saved feedback records for the feedback command, when notes exist |
 
-List outcomes are `pending` or `idle`.
-Review outcomes include `approved`, `feedback`, `incomplete`, `decision_required`, `cancelled`, `idle`, and `no_waiting`.
+Needs-review outcomes are `pending` or `idle`.
+Review outcomes include `approved`, `feedback`, `incomplete`, `decision_required`, `cancelled`, `idle`, `range_complete`, and `no_waiting`.
 `no_waiting` means that deferred reviews remain unresolved, but none are eligible for automatic selection.
 Approval returns `approved`.
 A valid result exits with status 0, including feedback and required decisions.
@@ -138,7 +208,7 @@ An agent must inspect the result's status rather than equate exit status 0 with 
 Command failures exit with status 1 and produce a JSON error object:
 
 ```json
-{"version":1,"command":"list","status":"error","error":"..."}
+{"version":1,"command":"needs-review","status":"error","error":"..."}
 ```
 
 Help, version, and shell completion output retain their usual formats.
@@ -156,17 +226,23 @@ The branch name determines the state file, so a branch rename does not automatic
 Writes use an exclusive `.lock` file and atomic replacement.
 After a crashed writer, remove a stale state lock only after confirming that no writer is running.
 
-The review worktree uses Pi's path calculation:
+Each repository uses one persistent, detached review checkout:
 
 ```text
-$XDG_CACHE_HOME/tuicr-review-worktrees/<sanitized-repo-name>-<repo-path-hash>
+<git-common-dir>/umpire/worktree
 ```
 
-The fallback cache directory is `~/.cache`, including on macOS.
-Worktrees remain in place because tuicr associates saved sessions with their checkout paths.
-The adjacent `.umpire.lock` file uses an operating-system lock that releases when its last holder exits.
+All feature checkouts and branches sharing that Git common directory use the same review checkout and lock.
+Umpire checks out the selected stack tip so tuicr's editor opens the correct file version.
+Tuicr associates saved sessions with the checkout path and commit range, not just individual file paths.
+Identical stacks can reuse the same saved session across branches, while Umpire's attempt history remains branch-specific.
+No migration from the previous cache-based checkout location is performed.
+
+The adjacent `worktree.umpire.lock` file uses an operating-system lock that releases when its last holder exits.
 Do not delete this lock file to bypass an active review.
-Pi does not currently participate in Umpire's worktree locking, so do not run Pi and Umpire reviews concurrently in the same review worktree.
+The checkout remains in place between reviews, so routine reviews do not create disposable worktrees that need garbage collection.
+Other tools must not use or edit this checkout while Umpire holds its lock.
+Prepare fixes in the feature checkout or a separate writable workspace, never in the review checkout.
 
 Umpire reads tuicr's platform review store, then checks the other platform's location for existing sessions.
 Supported formats are review index `2.0` and saved session `1.3`.
@@ -205,7 +281,7 @@ mise run functional-tests
 
 This task requires tuicr on `PATH` and permission to create pseudo-terminals.
 It runs the compiled Umpire binary against real tuicr, using terminal key input and tuicr's public annotation CLI.
-It checks complete reviews, incomplete feedback, and recovery of a saved review after Umpire is killed.
+It checks complete reviews, incomplete feedback, and interactive recovery of a saved review after Umpire is killed.
 It also selects recover, replace, and cancel through the actual terminal prompt and checks the resulting status through another CLI invocation.
 A terminal emulator reconstructs screen updates instead of matching raw ANSI output.
 The real-tuicr tests skip in the standard suite unless `UMPIRE_REAL_TUICR=1` is set.

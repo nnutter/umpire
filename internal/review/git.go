@@ -182,6 +182,7 @@ func (r Repository) stacks(ctx context.Context, repo, base, history string) ([]S
 	}
 	parent := base
 	ids := map[string]bool{}
+	targets := map[string][]int{}
 	for row := range strings.SplitSeq(history, "\n") {
 		fields := strings.SplitN(row, "\x00", 3)
 		if len(fields) != 3 {
@@ -195,7 +196,7 @@ func (r Repository) stacks(ctx context.Context, repo, base, history string) ([]S
 			return nil, fmt.Errorf("commit %s has an empty subject", sha)
 		}
 		if match := feedbackSubject.FindStringSubmatch(subject); match != nil {
-			if err := appendFeedback(stacks, sha, match[1]); err != nil {
+			if err := appendFeedback(stacks, targets, sha, match[1]); err != nil {
 				return nil, err
 			}
 		} else {
@@ -205,25 +206,21 @@ func (r Repository) stacks(ctx context.Context, repo, base, history string) ([]S
 			}
 			stacks = append(stacks, Stack{Repo: repo, Commits: []string{sha}, Base: parent, Tip: sha, Subject: subject, Key: sha, ChangeID: id})
 		}
+		targets[subject] = append(targets[subject], len(stacks)-1)
 		parent = sha
 	}
 	return stacks, nil
 }
 
-func appendFeedback(stacks []Stack, sha, subject string) error {
-	matches := 0
-	for _, stack := range stacks {
-		if stack.Subject == subject {
-			matches++
-		}
-	}
-	if matches != 1 {
+func appendFeedback(stacks []Stack, targets map[string][]int, sha, subject string) error {
+	matches := targets[subject]
+	if len(matches) != 1 {
 		return fmt.Errorf("feedback commit %s has an ambiguous or non-adjacent target", sha)
 	}
-	last := &stacks[len(stacks)-1]
-	if last.Subject != subject {
+	if matches[0] != len(stacks)-1 {
 		return fmt.Errorf("feedback commit %s has a non-adjacent target", sha)
 	}
+	last := &stacks[len(stacks)-1]
 	last.Commits = append(last.Commits, sha)
 	last.Tip = sha
 	last.Key = last.Commits[0] + ".." + sha

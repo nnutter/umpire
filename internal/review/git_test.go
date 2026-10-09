@@ -54,6 +54,22 @@ func TestSnapshot(t *testing.T) {
 	require.NotEqual(t, view.Stacks[0].Commits, changed.Stacks[0].Commits)
 }
 
+func TestSnapshotGroupsNativeFixupsTargetingStackTip(t *testing.T) {
+	r := testRepo(t)
+	gitTest(t, r.Dir, "commit", "--allow-empty", "-m", "Feature")
+	commits := []string{gitTest(t, r.Dir, "rev-parse", "HEAD")}
+	t.Setenv("GIT_EDITOR", "true")
+	for _, kind := range []string{"", "amend:", "reword:"} {
+		gitTest(t, r.Dir, "commit", "--allow-empty", "--fixup="+kind+commits[len(commits)-1])
+		commits = append(commits, gitTest(t, r.Dir, "rev-parse", "HEAD"))
+	}
+	view, err := r.Snapshot(t.Context())
+	require.NoError(t, err)
+	require.Len(t, view.Stacks, 1)
+	require.Equal(t, commits, view.Stacks[0].Commits)
+	require.Equal(t, commits[0]+".."+commits[len(commits)-1], view.Stacks[0].Key)
+}
+
 func TestSnapshotRejectsUnsafeHistory(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -64,6 +80,16 @@ func TestSnapshotRejectsUnsafeHistory(t *testing.T) {
 		{"detached", func(t *testing.T, r Repository) { gitTest(t, r.Dir, "checkout", "--detach") }, "not detached HEAD"},
 		{"non-adjacent fixup", func(t *testing.T, r Repository) {
 			for _, s := range []string{"One", "Two", "fixup! One"} {
+				gitTest(t, r.Dir, "commit", "--allow-empty", "-m", s)
+			}
+		}, "non-adjacent"},
+		{"non-adjacent nested fixup", func(t *testing.T, r Repository) {
+			for _, s := range []string{"One", "fixup! One", "Two", "fixup! fixup! One"} {
+				gitTest(t, r.Dir, "commit", "--allow-empty", "-m", s)
+			}
+		}, "non-adjacent"},
+		{"missing nested target", func(t *testing.T, r Repository) {
+			for _, s := range []string{"One", "fixup! fixup! One"} {
 				gitTest(t, r.Dir, "commit", "--allow-empty", "-m", s)
 			}
 		}, "non-adjacent"},
