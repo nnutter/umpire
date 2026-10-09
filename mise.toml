@@ -75,6 +75,7 @@ if [ -z "${usage_staged_files:-}" ]; then
 fi
 go_files=""
 for f in ${usage_staged_files}; do
+  [ -f "$f" ] || continue
   case "$f" in *.go) go_files="$go_files $f" ;; esac
 done
 [ -z "$go_files" ] && exit 0
@@ -94,6 +95,7 @@ if [ -z "${usage_staged_files:-}" ]; then
 fi
 go_files=""
 for f in ${usage_staged_files}; do
+  [ -f "$f" ] || continue
   case "$f" in *.go) go_files="$go_files $f" ;; esac
 done
 [ -z "$go_files" ] && exit 0
@@ -113,6 +115,7 @@ if [ -z "${usage_staged_files:-}" ]; then
 fi
 dirs=""
 for f in ${usage_staged_files}; do
+  [ -f "$f" ] || continue
   case "$f" in
     *.go)
       d=$(dirname "$f")
@@ -144,6 +147,7 @@ if [ -z "${usage_staged_files:-}" ]; then
 fi
 dirs=""
 for f in ${usage_staged_files}; do
+  [ -f "$f" ] || continue
   case "$f" in
     *.go)
       d=$(dirname "$f")
