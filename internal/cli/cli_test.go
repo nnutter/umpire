@@ -46,9 +46,10 @@ func execute(t *testing.T, dir string, args ...string) (string, string, error) {
 }
 
 func TestCommandsShareStructuredResults(t *testing.T) {
+	binary := buildUmpire(t)
 	dir := featureRepo(t)
 	for _, args := range [][]string{{"list", "--json"}, {"--json", "ls"}} {
-		out, terminal, err := execute(t, dir, args...)
+		out, terminal, err := executeBinary(t, binary, dir, args...)
 		require.NoError(t, err)
 		require.Empty(t, terminal)
 		require.Equal(t, 1, strings.Count(out, "\n"))
@@ -59,20 +60,20 @@ func TestCommandsShareStructuredResults(t *testing.T) {
 		require.Len(t, result.Entries[0].Stack.Commits[0], 40)
 		require.NotContains(t, out, "\x1b")
 	}
-	out, terminal, err := execute(t, dir, "ls")
+	out, terminal, err := executeBinary(t, binary, dir, "ls")
 	require.NoError(t, err)
 	require.Empty(t, terminal)
 	require.Contains(t, out, "Needs review")
 	require.Contains(t, out, "Add feature")
 	require.Contains(t, out, "COMMITS (inclusive)")
-	out, terminal, err = execute(t, dir, "approve", "HEAD", "--json")
+	out, terminal, err = executeBinary(t, binary, dir, "approve", "HEAD", "--json")
 	require.NoError(t, err)
 	require.Empty(t, terminal)
 	var approved review.Result
 	require.NoError(t, json.Unmarshal([]byte(out), &approved))
 	require.Equal(t, "approved", approved.Status)
 	require.Equal(t, "user-command", approved.Entries[0].Attempt.ApprovalSource)
-	out, _, err = execute(t, dir, "list", "--json")
+	out, _, err = executeBinary(t, binary, dir, "list", "--json")
 	require.NoError(t, err)
 	var listed review.Result
 	require.NoError(t, json.Unmarshal([]byte(out), &listed))
@@ -81,6 +82,7 @@ func TestCommandsShareStructuredResults(t *testing.T) {
 }
 
 func TestJSONErrorsIncludeArgumentAndGitFailures(t *testing.T) {
+	binary := buildUmpire(t)
 	dir := featureRepo(t)
 	git(t, dir, "branch", "--unset-upstream")
 	for _, args := range [][]string{
@@ -90,8 +92,10 @@ func TestJSONErrorsIncludeArgumentAndGitFailures(t *testing.T) {
 		{"not-a-command", "--json"},
 		{"--json", "list", "--unknown"},
 	} {
-		out, terminal, err := execute(t, dir, args...)
-		require.Error(t, err)
+		out, terminal, err := executeBinary(t, binary, dir, args...)
+		var exit *exec.ExitError
+		require.ErrorAs(t, err, &exit)
+		require.Equal(t, 1, exit.ExitCode())
 		require.Empty(t, terminal)
 		require.Equal(t, 1, strings.Count(out, "\n"))
 		var result errorResult
