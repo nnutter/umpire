@@ -57,7 +57,9 @@ func renderResult(result review.Result) (string, error) {
 	if err := renderDetails(&out, result.Entries); err != nil {
 		return "", err
 	}
-	fmt.Fprintln(&out, resultMessage(result))
+	if message := resultMessage(result); message != "" {
+		fmt.Fprintln(&out, message)
+	}
 	if result.Decision != nil {
 		fmt.Fprintf(&out, "Attempt: %s\n", safeText(result.Decision.AttemptID))
 		fmt.Fprintln(&out, "Choose umpire review --recover, umpire review --replace, or leave the attempt unchanged.")
@@ -132,7 +134,7 @@ func resultMessage(result review.Result) string {
 	case "cancelled":
 		return "Review cancelled. The attempt remains unchanged."
 	default:
-		return "Approved stacks are omitted from this summary."
+		return ""
 	}
 }
 

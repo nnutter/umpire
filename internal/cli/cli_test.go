@@ -48,24 +48,25 @@ func execute(t *testing.T, dir string, args ...string) (string, string, error) {
 func TestCommandsShareStructuredResults(t *testing.T) {
 	binary := buildUmpire(t)
 	dir := featureRepo(t)
-	for _, args := range [][]string{{"list", "--json"}, {"--json", "ls"}} {
+	for _, args := range [][]string{{"needs-review", "--json"}, {"--json", "needs-review"}} {
 		out, terminal, err := executeBinary(t, binary, dir, args...)
 		require.NoError(t, err)
 		require.Empty(t, terminal)
 		require.Equal(t, 1, strings.Count(out, "\n"))
 		var result review.Result
 		require.NoError(t, json.Unmarshal([]byte(out), &result))
-		require.Equal(t, "list", result.Command)
+		require.Equal(t, "needs-review", result.Command)
 		require.Equal(t, "needs_review", result.Entries[0].Status)
 		require.Len(t, result.Entries[0].Stack.Commits[0], 40)
 		require.NotContains(t, out, "\x1b")
 	}
-	out, terminal, err := executeBinary(t, binary, dir, "ls")
+	out, terminal, err := executeBinary(t, binary, dir, "needs-review")
 	require.NoError(t, err)
 	require.Empty(t, terminal)
 	require.Contains(t, out, "Needs review")
 	require.Contains(t, out, "Add feature")
 	require.Contains(t, out, "COMMITS (inclusive)")
+	require.NotContains(t, out, "Approved stacks are omitted from this summary.")
 	out, terminal, err = executeBinary(t, binary, dir, "approve", "HEAD", "--json")
 	require.NoError(t, err)
 	require.Empty(t, terminal)
@@ -73,7 +74,7 @@ func TestCommandsShareStructuredResults(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &approved))
 	require.Equal(t, "approved", approved.Status)
 	require.Equal(t, "user-command", approved.Entries[0].Attempt.ApprovalSource)
-	out, _, err = executeBinary(t, binary, dir, "list", "--json")
+	out, _, err = executeBinary(t, binary, dir, "needs-review", "--json")
 	require.NoError(t, err)
 	var listed review.Result
 	require.NoError(t, json.Unmarshal([]byte(out), &listed))
@@ -86,11 +87,11 @@ func TestJSONErrorsIncludeArgumentAndGitFailures(t *testing.T) {
 	dir := featureRepo(t)
 	git(t, dir, "branch", "--unset-upstream")
 	for _, args := range [][]string{
-		{"list", "--json"},
+		{"needs-review", "--json"},
 		{"approve", "--json"},
 		{"review", "--recover", "--replace", "--json"},
 		{"not-a-command", "--json"},
-		{"--json", "list", "--unknown"},
+		{"--json", "needs-review", "--unknown"},
 	} {
 		out, terminal, err := executeBinary(t, binary, dir, args...)
 		var exit *exec.ExitError
@@ -139,7 +140,7 @@ func TestTerminalRenderingRetainsFeedbackAndRemovesControlSequences(t *testing.T
 	attempt := review.Attempt{ID: "feedback", Stack: view.Stacks[0], Status: "feedback", StartedAt: "2026-01-01T00:00:00Z"}
 	attempt.Review = jsontext.Value(`{"id":"saved","version":"1.3","reviewed":1,"files":2,"complete":false,"comments":[{"content":"Revise validation\u001b[31m","location":"line","path":"main.go","stored_line":"12"}],"sessionNotes":"Explain the change"}`)
 	require.NoError(t, (review.Store{Path: view.Path}).Update(func(state *review.State) error { state.Attempts = append(state.Attempts, attempt); return nil }))
-	out, _, err := execute(t, dir, "list")
+	out, _, err := execute(t, dir, "needs-review")
 	require.NoError(t, err)
 	require.Contains(t, out, "Feedback")
 	require.Contains(t, out, "main.go:12: Revise validation")

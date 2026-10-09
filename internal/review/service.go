@@ -85,7 +85,7 @@ func (s Service) List(ctx context.Context) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	return makeResult("list", view, state), nil
+	return makeResult("needs-review", view, state), nil
 }
 
 func (s Service) selectRange(ctx context.Context, view Snapshot, first, last string) ([]Stack, error) {

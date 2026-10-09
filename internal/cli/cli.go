@@ -53,7 +53,7 @@ type application struct {
 func (a *application) command() *cobra.Command {
 	root := &cobra.Command{Use: "umpire", Short: "Review feature-branch commit stacks with tuicr", Long: "Umpire tracks review of exact commit stacks against the configured Git upstream.\nApproval never transfers to rewritten commits or added fixups."}
 	root.PersistentFlags().BoolVar(&a.json, "json", a.json, "Emit a versioned JSON result without interactive prompts")
-	list := &cobra.Command{Use: "list", Aliases: []string{"ls"}, Short: "Show unresolved stacks and active review attempts", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	needsReview := &cobra.Command{Use: "needs-review", Short: "Show unresolved stacks and active review attempts", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		result, err := a.service.List(cmd.Context())
 		if err != nil {
 			return err
@@ -71,7 +71,7 @@ func (a *application) command() *cobra.Command {
 		}
 		return a.write(result)
 	}}
-	root.AddCommand(list, approve, a.reviewCommand())
+	root.AddCommand(needsReview, approve, a.reviewCommand())
 	return root
 }
 

@@ -105,7 +105,7 @@ func TestRealTuicrFeedback(t *testing.T) {
 	require.Equal(t, "Handle the empty case", saved.Comments[0].Content)
 	require.Equal(t, "feature.txt", saved.Comments[0].Path)
 	require.Equal(t, "line", saved.Comments[0].Location)
-	listed := runRealCommand(t, binary, dir, env, "list")
+	listed := runRealCommand(t, binary, dir, env, "needs-review")
 	require.Contains(t, listed, "Feedback")
 	require.Contains(t, listed, "feature.txt:1: Handle the empty case")
 }
@@ -229,7 +229,7 @@ func TestRealTuicrRecoveryPrompt(t *testing.T) {
 			case "cancel":
 				require.Contains(t, out, "Review cancelled. The attempt remains unchanged.")
 			}
-			after := runRealCommand(t, binary, dir, env, "list", "--json")
+			after := runRealCommand(t, binary, dir, env, "needs-review", "--json")
 			var result struct {
 				Status  string `json:"status"`
 				Entries []struct {
@@ -281,7 +281,7 @@ func TestRealTuicrCleanReview(t *testing.T) {
 	require.True(t, result.Entries[0].Attempt.Review.Complete)
 	require.Equal(t, 2, result.Entries[0].Attempt.Review.Reviewed)
 	require.Equal(t, 2, result.Entries[0].Attempt.Review.Files)
-	listed := runRealCommand(t, binary, dir, env, "list", "--json")
+	listed := runRealCommand(t, binary, dir, env, "needs-review", "--json")
 	var status struct {
 		Status string `json:"status"`
 	}

@@ -29,8 +29,8 @@ Configure the intended upstream explicitly with Git.
 ### List unresolved stacks
 
 ```sh
-umpire list
-umpire ls --json
+umpire needs-review
+umpire needs-review --json
 ```
 
 A stack contains one original commit and its immediately following `fixup!`, `amend!`, or `reword!` commits.
@@ -133,7 +133,7 @@ Successful results contain:
 | `active` | Persisted active attempts |
 | `decision` | Required explicit choice, when present |
 
-List outcomes are `pending` or `idle`.
+Needs-review outcomes are `pending` or `idle`.
 Review outcomes include `approved`, `feedback`, `incomplete`, `decision_required`, `cancelled`, `idle`, and `no_waiting`.
 `no_waiting` means that deferred reviews remain unresolved, but none are eligible for automatic selection.
 Approval returns `approved`.
@@ -143,7 +143,7 @@ An agent must inspect the result's status rather than equate exit status 0 with 
 Command failures exit with status 1 and produce a JSON error object:
 
 ```json
-{"version":1,"command":"list","status":"error","error":"..."}
+{"version":1,"command":"needs-review","status":"error","error":"..."}
 ```
 
 Help, version, and shell completion output retain their usual formats.
