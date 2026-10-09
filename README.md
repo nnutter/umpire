@@ -206,6 +206,7 @@ mise run functional-tests
 This task requires tuicr on `PATH` and permission to create pseudo-terminals.
 It runs the compiled Umpire binary against real tuicr, using terminal key input and tuicr's public annotation CLI.
 It checks complete reviews, incomplete feedback, and recovery of a saved review after Umpire is killed.
+It also selects recover, replace, and cancel through the actual terminal prompt and checks the resulting status through another CLI invocation.
 A terminal emulator reconstructs screen updates instead of matching raw ANSI output.
 The real-tuicr tests skip in the standard suite unless `UMPIRE_REAL_TUICR=1` is set.
 When enabled, a missing tuicr executable or unavailable pseudo-terminal fails the tests.

@@ -173,6 +173,75 @@ func TestRealTuicrInterruptedRecovery(t *testing.T) {
 	require.Equal(t, 1, result.Entries[0].Attempt.Review.Reviewed)
 }
 
+func TestRealTuicrRecoveryPrompt(t *testing.T) {
+	for _, choice := range []string{"recover", "replace", "cancel"} {
+		t.Run(choice, func(t *testing.T) {
+			env := realTuicrEnvironment(t)
+			binary := buildUmpire(t)
+			dir := realFeatureRepo(t)
+			initial := startTerminal(t, binary, dir, env, "review", "--json")
+			initial.waitFor(t, "feature.txt")
+			initial.send(t, ":set noreviewed\rr")
+			initial.waitFor(t, "1/2")
+			initial.send(t, ":w\r:q!\r")
+			before := initial.waitExit(t)
+			var prior struct {
+				Status  string `json:"status"`
+				Entries []struct {
+					Attempt struct {
+						ID string `json:"id"`
+					} `json:"attempt"`
+				} `json:"entries"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(before), &prior))
+			require.Equal(t, "incomplete", prior.Status)
+			require.Len(t, prior.Entries, 1)
+			prompt := startTerminal(t, binary, dir, env, "review")
+			prompt.waitFor(t, "A previous review attempt exists")
+			switch choice {
+			case "recover":
+				prompt.send(t, "kk\r")
+			case "replace":
+				prompt.send(t, "k\r")
+				prompt.waitFor(t, "feature.txt")
+				prompt.send(t, ":set noreviewed\rr")
+				prompt.waitFor(t, "All files reviewed")
+				prompt.send(t, ":wq\r")
+			case "cancel":
+				prompt.send(t, "\r")
+			}
+			out := prompt.waitExit(t)
+			switch choice {
+			case "recover":
+				require.Contains(t, out, "Review is incomplete, not approved.")
+			case "replace":
+				require.Contains(t, out, "Approved. Approval applies only to the recorded commits.")
+			case "cancel":
+				require.Contains(t, out, "Review cancelled. The attempt remains unchanged.")
+			}
+			after := runRealCommand(t, binary, dir, env, "list", "--json")
+			var result struct {
+				Status  string `json:"status"`
+				Entries []struct {
+					Status  string `json:"status"`
+					Attempt struct {
+						ID string `json:"id"`
+					} `json:"attempt"`
+				} `json:"entries"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(after), &result))
+			if choice == "replace" {
+				require.Equal(t, "idle", result.Status)
+				require.Empty(t, result.Entries)
+			} else {
+				require.Len(t, result.Entries, 1)
+				require.Equal(t, "incomplete", result.Entries[0].Status)
+				require.Equal(t, prior.Entries[0].Attempt.ID, result.Entries[0].Attempt.ID)
+			}
+		})
+	}
+}
+
 func TestRealTuicrCleanReview(t *testing.T) {
 	env := realTuicrEnvironment(t)
 	binary := buildUmpire(t)
