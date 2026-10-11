@@ -16,6 +16,15 @@ import (
 	"github.com/nnutter/umpire/internal/review"
 )
 
+func renderStatus(output io.Writer, counts []review.StateCount) error {
+	var out strings.Builder
+	for _, count := range counts {
+		fmt.Fprintf(&out, "%s: %d\n", statusLabel(count.State), count.Count)
+	}
+	_, err := io.WriteString(output, out.String())
+	return err
+}
+
 func render(output io.Writer, result review.Result) error {
 	var text string
 	var err error

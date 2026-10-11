@@ -10,6 +10,39 @@ Use this skill to address reviews that the user completed through Umpire.
 This skill does not launch reviews or register harness commands.
 The user controls review and approval.
 
+## Check review progress
+
+Use this read-only command when you need commit counts rather than individual stacks or saved feedback:
+
+```sh
+umpire status --json
+```
+
+Successful output is a top-level array, not the versioned result object used by other commands.
+Each element contains a `state` string and a `count` integer.
+The array always includes these states in this order, including zero counts:
+
+1. `needs_review`
+2. `reviewing`
+3. `feedback`
+4. `incomplete`
+5. `approved`
+
+Counts include all commits in the current feature range, including attached fixups.
+Each commit inherits its stack's current state.
+Historical attempts and removed commits do not contribute to the counts.
+Changed stacks lose prior approval and count as `needs_review` until a new attempt records another state.
+An empty feature range produces all five states with zero counts.
+
+Check the exit code before interpreting the array.
+Command failures exit with status `1` and emit the standard versioned JSON error object instead.
+Successful `status` output has no `version` field.
+
+Use `umpire needs-review --json` for unresolved stack details and current commit IDs.
+Its `entries` omits approved stacks, but its `view.stacks` includes them.
+Use `umpire feedback --json` for saved comments and session notes.
+Counts do not identify feedback targets or authorize approval.
+
 ## Retrieve feedback
 
 Run this command from the feature checkout:
