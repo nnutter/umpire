@@ -35,6 +35,35 @@ An absent upstream, detached HEAD, merge commits, or ambiguous fixup placement i
 If the branch tracks its own remote branch, the review range can be empty.
 Configure the intended upstream explicitly with Git.
 
+### Count commits by review state
+
+```sh
+umpire status
+umpire status --json
+```
+
+This read-only command counts commits in the current feature range, including attached fixups.
+Each commit inherits its stack's current state.
+Historical attempts and commits removed from the feature range do not contribute to the counts.
+Changed stacks need another review and count as `needs_review` until a new attempt records another state.
+
+The command always includes all five states, even when their counts are zero.
+Text and JSON output use this order: `needs_review`, `reviewing`, `feedback`, `incomplete`, `approved`.
+Unlike other commands, successful JSON output is a top-level array, not a versioned result object:
+
+```json
+[
+  {"state":"needs_review","count":3},
+  {"state":"reviewing","count":0},
+  {"state":"feedback","count":2},
+  {"state":"incomplete","count":0},
+  {"state":"approved","count":4}
+]
+```
+
+The array preserves state order for consumers.
+Command failures use the standard JSON error object.
+
 ### List unresolved stacks
 
 ```sh
@@ -60,7 +89,7 @@ This read-only command returns notes persisted by Umpire, including reviews comp
 It does not launch tuicr, recover an attempt, or change either review store.
 Interrupted sessions whose notes were not captured by Umpire still require explicit interactive recovery.
 
-Feedback results use the same versioned envelope as other commands, with `"command":"feedback"`.
+Feedback results use the versioned result envelope, with `"command":"feedback"`.
 The optional `feedback` array contains records with these fields:
 
 | Field | Meaning |
@@ -177,7 +206,9 @@ Agents must not infer approval or approve commits on the user's behalf.
 ## JSON output for agents
 
 All commands accept `--json`, before or after the subcommand.
-The command produces one JSON object followed by a newline on stdout.
+Each command produces one JSON value followed by a newline on stdout.
+Successful `status` output is an ordered array of state counts.
+Other successful commands produce a versioned JSON object.
 JSON and terminal output consume the same typed result.
 JSON retains full commit IDs, attempts, saved comments, session notes, and optional previous-version lineage.
 Tuicr renders its interactive view through the controlling terminal, with diagnostics on stderr, not the JSON stream.
@@ -185,7 +216,7 @@ Umpire launches tuicr with `--stdout` to bypass clipboard confirmation and disca
 Feedback comes from the persisted review session.
 `--json` disables Umpire's recovery prompt, but a new tuicr review still requires an interactive terminal.
 
-Successful results contain:
+Successful results other than `status` contain:
 
 | Field | Meaning |
 | --- | --- |
