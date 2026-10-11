@@ -78,7 +78,17 @@ func (a *application) command() *cobra.Command {
 		}
 		return a.write(result)
 	}}
-	root.AddCommand(needsReview, feedback, approve, a.reviewCommand())
+	status := &cobra.Command{Use: "status", Short: "Show commit counts in each review state", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		counts, err := a.service.Status(cmd.Context())
+		if err != nil {
+			return err
+		}
+		if a.json {
+			return writeJSON(a.output, counts)
+		}
+		return renderStatus(a.output, counts)
+	}}
+	root.AddCommand(needsReview, feedback, approve, status, a.reviewCommand())
 	return root
 }
 

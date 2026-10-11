@@ -39,6 +39,12 @@ type Decision struct {
 	Choices   []string `json:"choices"`
 }
 
+// StateCount counts current feature commits in one review state.
+type StateCount struct {
+	State string `json:"state"`
+	Count int    `json:"count"`
+}
+
 // Service coordinates the current branch with its durable review history.
 type Service struct{ Repository Repository }
 
@@ -125,6 +131,35 @@ func (s Service) List(ctx context.Context) (Result, error) {
 		return Result{}, err
 	}
 	return makeResult("needs-review", view, state), nil
+}
+
+// Status returns ordered commit counts without changing review state.
+func (s Service) Status(ctx context.Context) ([]StateCount, error) {
+	view, err := s.Repository.Snapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	state, err := (Store{Path: view.Path}).Load()
+	if err != nil {
+		return nil, err
+	}
+	counts := []StateCount{
+		{State: "needs_review"},
+		{State: "reviewing"},
+		{State: "feedback"},
+		{State: "incomplete"},
+		{State: "approved"},
+	}
+	for _, stack := range view.Stacks {
+		status := entryFor(state, stack).Status
+		for i := range counts {
+			if counts[i].State == status {
+				counts[i].Count += len(stack.Commits)
+				break
+			}
+		}
+	}
+	return counts, nil
 }
 
 func (s Service) selectRange(ctx context.Context, view Snapshot, first, last string) ([]Stack, error) {
