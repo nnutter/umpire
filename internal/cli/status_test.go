@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json/v2"
 	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -68,6 +69,34 @@ func TestStatusWithoutReviewHistory(t *testing.T) {
 	require.JSONEq(t, `[{"state":"needs_review","count":1},{"state":"reviewing","count":0},{"state":"feedback","count":0},{"state":"incomplete","count":0},{"state":"approved","count":0}]`+"\n", out)
 	_, err = os.Stat(view.Path)
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestStatusOutsideGitRepository(t *testing.T) {
+	binary := buildUmpire(t)
+	dir := t.TempDir()
+	const message = "umpire must be used from inside a Git repository"
+	for _, args := range [][]string{{"status"}, {"status", "--json"}} {
+		t.Run(args[len(args)-1], func(t *testing.T) {
+			out, terminal, err := executeBinary(t, binary, dir, args...)
+			var exit *exec.ExitError
+			require.ErrorAs(t, err, &exit)
+			require.Equal(t, 1, exit.ExitCode())
+			if len(args) == 2 {
+				require.Empty(t, terminal)
+				var failed errorResult
+				require.NoError(t, json.Unmarshal([]byte(out), &failed))
+				require.Equal(t, "status", failed.Command)
+				require.Equal(t, "error", failed.Status)
+				require.Equal(t, message, failed.Error)
+			} else {
+				require.Empty(t, out)
+				require.Contains(t, terminal, "Umpire must be used from inside a Git repository.")
+				require.NotContains(t, terminal, "git symbolic-ref")
+				require.NotContains(t, terminal, "detached HEAD")
+				require.NotContains(t, terminal, "exit status")
+			}
+		})
+	}
 }
 
 func TestStatusJSONErrors(t *testing.T) {

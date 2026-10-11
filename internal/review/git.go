@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -121,13 +122,13 @@ func (r Repository) Snapshot(ctx context.Context) (Snapshot, error) {
 
 func (r Repository) branchView(ctx context.Context) (Snapshot, string, error) {
 	var view Snapshot
-	branch, err := r.git(ctx, "symbolic-ref", "--quiet", "--short", "HEAD")
-	if err != nil {
-		return view, "", fmt.Errorf("review requires a branch, not detached HEAD: %w", err)
-	}
 	repo, err := r.git(ctx, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return view, "", err
+	}
+	branch, err := r.git(ctx, "symbolic-ref", "--quiet", "--short", "HEAD")
+	if err != nil {
+		return view, "", fmt.Errorf("review requires a branch, not detached HEAD: %w", err)
 	}
 	common, err := r.git(ctx, "rev-parse", "--path-format=absolute", "--git-common-dir")
 	if err != nil {
@@ -166,10 +167,15 @@ func (r Repository) git(ctx context.Context, args ...string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = r.Dir
+	// Keep Git diagnostics stable so repository discovery errors can be identified.
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
+		if strings.HasPrefix(stderr.String(), "fatal: not a git repository") {
+			return "", fmt.Errorf("umpire must be used from inside a Git repository")
+		}
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return strings.TrimSpace(string(out)), nil
